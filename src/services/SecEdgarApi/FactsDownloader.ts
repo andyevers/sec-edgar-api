@@ -42,7 +42,6 @@ export default class FactsDownloader implements IFactsDownloader {
 
 	public async downloadCompanyFactsDirectory(params: DownloadCompanyFactsDirectoryParams): Promise<boolean> {
 		const { outputDirname, onChunk, onDownloadComplete, onError, onComplete, unzip = true } = params
-		// writes download and unzip progress with percentage in terminal if useWriteProgressBar is true
 
 		return new Promise(async (resolve, reject) => {
 			const filename = `${outputDirname}.zip`

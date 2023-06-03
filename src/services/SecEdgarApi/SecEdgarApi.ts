@@ -97,11 +97,14 @@ export default class SecEdgarApi {
 	}
 
 	/**
+	 * Note: Properties that are not provied from report are calculated an may not be accurate,
+	 * verify results finance.yahoo.com (ex: https://finance.yahoo.com/quote/AAPL/financials)
+	 *
+	 * Please contribute to improve resolving report properties: https://github.com/andyevers/sec-edgar-api
+	 *
 	 * Parses reports from company facts. Calculates missing properties and uses a single interface
 	 * for all reports. This includes only 10-K and 10-Q annual and quarterly reports. To include
-	 * all reports, use getReportsRaw
-	 *
-	 * Note that calculated properties are estimated if they are not available in the company facts.
+	 * all reports, use getReportsRaw.
 	 */
 	public async getReports(params: GetSymbolParams): Promise<ReportWrapper[]> {
 		const facts = await this.getFacts(params)
@@ -121,6 +124,8 @@ export default class SecEdgarApi {
 	 * Downloads the companyfacts.zip file and extracts the directory containing all company
 	 * reports available from sec.gov. After downloading, you can use factFileReader and reportParser
 	 * to get and read reports.
+	 *
+	 * Note: Over 15GB of data is downloaded and extracted.
 	 */
 	public async downloadCompanyFactsDirectory(params: DownloadCompanyFactsDirectoryParams): Promise<boolean> {
 		return this.factsDownloader.downloadCompanyFactsDirectory(params)
