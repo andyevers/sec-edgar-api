@@ -87,6 +87,30 @@ export default class ReportParser {
 	}
 
 	/**
+	 * parseReportsRaw but removes meta data from the report
+	 */
+	public parseReportsRawNoMeta(
+		companyFactListData: Pick<CompanyFactListData, 'facts'>,
+		options?: ParseReportsOptions,
+	): Record<string, number>[] {
+		const reportsRaw = this.parseReportsRaw(companyFactListData, options)
+		reportsRaw.forEach((reportRaw) => {
+			const report = reportRaw as any
+			delete report.dateFiled
+			delete report.dateReport
+			delete report.fiscalPeriod
+			delete report.fiscalYear
+			delete report.form
+			delete report.frame
+			delete report.isTTM
+			delete report.reportType
+			delete report.taxonomy
+		})
+
+		return reportsRaw as unknown as Record<string, number>[]
+	}
+
+	/**
 	 * Avoids deep nesting logic while iteratating through company facts
 	 *
 	 * @param callback called on each company fact.

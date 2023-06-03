@@ -151,3 +151,30 @@ Resolvers attempt to get information from each report and output a uniform inter
 | resolveFiscalYearCumulativeProperties | Q1 + Q2 + Q3 + Q4 = FY (for quarterly properties that add to annual)                                                     |
 | resolveQ4FiscalYearMatchingProperties | Q4 = FY (for non-cumulative properties such as sharesOutstanding)                                                        |
 | resolveRevenueTotal                   | revenueCost + profitGross = revenueTotal                                                                                 |
+
+## Contributing
+
+Getting all the properties in a uniform interface accurately is proving to be very difficult due to the differences in all the reports.
+Please contribute if you know how to improve this.
+
+Files for mapping & resolving properties:
+
+-   Mapping properties: `src/util/key-translations.ts`
+-   Resolving properties: `src/services/ReportParser.ts` (add resolvers to the `resolvers/` directory, import to `/resolver/index.ts`, and add to ReportParser.resolveAll)
+
+These are the scripts I used to get keys commonly used across reports, which you can use to add to `key-translations.ts`
+
+```TS
+import { readAllCompanyFactFiles, getPropertyUsageCounts } from './scripts/script-helpers'
+
+const companyFactsList = readAllCompanyFactFiles(path.resolve('./downloads/companyfacts'), 10)
+const propertyUsageCounts = getPropertyUsageCounts(companyFactsList)
+
+fs.writeFileSync('./downloads/property-usage-counts.json', JSON.stringify(propertyUsageCounts, null, 2))
+```
+
+### Resources
+
+-   Validate resolved values: https://finance.yahoo.com/
+-   Financial calculations: https://www.gurufocus.com/
+-   Calculate change in working capital: https://www.oldschoolvalue.com/stock-valuation/change-in-working-capital/
