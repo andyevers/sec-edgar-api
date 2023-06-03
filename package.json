@@ -1,12 +1,16 @@
 {
-    "name": "sec-reports",
-    "version": "0.0.3",
-    "description": "Get and parse SEC Reports. download the companyfacts.zip file from https://www.sec.gov/edgar/sec-api-documentation",
+    "name": "sec-edgar-api",
+    "version": "0.0.1",
+    "description": "Fetch and parse SEC earnings reports and other filings. Useful for financial analysis.",
     "main": "./src/index.ts",
     "author": "Andrew Evers",
     "license": "ISC",
     "dependencies": {
         "unzipper": "^0.10.14"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/andyevers/sec-edgar-api"
     },
     "scripts": {
         "test": "jest test"
