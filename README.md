@@ -3,6 +3,12 @@
 Fetch and parse earnings reports and other documents filed with the SEC using the EDGAR API.
 This package is focused on the earnings reports for stock analysis.
 
+## Installation
+
+```SH
+npm install sec-edgar-api
+```
+
 ## Report Interface
 
 Reports are all returned as a uniform interface:
