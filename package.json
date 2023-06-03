@@ -1,0 +1,21 @@
+{
+    "name": "sec-reports",
+    "version": "0.0.3",
+    "description": "Get and parse SEC Reports. download the companyfacts.zip file from https://www.sec.gov/edgar/sec-api-documentation",
+    "main": "./src/index.ts",
+    "author": "Andrew Evers",
+    "license": "ISC",
+    "dependencies": {
+        "unzipper": "^0.10.14"
+    },
+    "scripts": {
+        "test": "jest test"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.5.2",
+        "@types/unzipper": "^0.10.6",
+        "jest": "^29.5.0",
+        "ts-jest": "^29.1.0",
+        "typescript": "^5.1.3"
+    }
+}
