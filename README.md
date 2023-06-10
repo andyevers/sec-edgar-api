@@ -106,10 +106,12 @@ const reports = await secEdgarApi.getReports({ symbol: 'AAPL' })
 or download all data from the SEC website and read directly from the files so you don't have to worry about rate limiting.
 
 ```TS
+import { factsDownloader } from 'sec-edgar-api/downloader'
+
 const downloadDirectory = './downloads/companyfacts'
 
 // Download companyfacts directory from sec.gov (over 15GB)
-await secEdgarApi.downloadCompanyFactsDirectory({
+await factsDownloader.downloadCompanyFactsDirectory({
     outputDirname: downloadDirectory,
     onDownloadComplete: () => process.stdout.write('\n'),
     onChunk: ({ percentComplete, stage }) => {

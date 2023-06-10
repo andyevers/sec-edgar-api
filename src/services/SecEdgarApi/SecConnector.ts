@@ -1,7 +1,7 @@
 import { CompanyFactFrame, CompanyFactListData, MultiCompanyFactFrame } from '../../types'
 import { SubmissionList } from '../../types/submission.type'
 import _cikBySymbol from '../../util/cik-by-symbol'
-import Client, { IClient } from './Client'
+import Client, { IClient } from '../Client'
 import Throttler, { IThrottler } from './Throttler'
 
 interface SecApiArgs {

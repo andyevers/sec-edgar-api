@@ -32,7 +32,7 @@ export interface RequestParams {
 }
 
 export interface ClientArgs {
-	httpClient: HttpClient
+	httpClient?: HttpClient
 	defaultHeaders?: Record<string, string>
 }
 
@@ -56,7 +56,7 @@ export default class Client implements IClient {
 		},
 	) {
 		const { httpClient, defaultHeaders } = args
-		this.httpClient = httpClient
+		this.httpClient = httpClient ?? https
 		this.defaultHeaders = defaultHeaders ?? {}
 	}
 

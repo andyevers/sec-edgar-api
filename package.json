@@ -6,9 +6,6 @@
     "author": "Andrew Evers (https://github.com/andyevers)",
     "homepage": "https://github.com/andyevers/sec-edgar-api#readme",
     "license": "ISC",
-    "dependencies": {
-        "unzipper": "^0.10.14"
-    },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/andyevers/sec-edgar-api.git"
@@ -28,6 +25,9 @@
         "earnings",
         "reports"
     ],
+    "dependencies": {
+        "unzipper": "^0.10.14"
+    },
     "devDependencies": {
         "@types/jest": "^29.5.2",
         "@types/unzipper": "^0.10.6",

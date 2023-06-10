@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import { WriteStream } from 'fs'
-import Client, { IClient, RequestParams } from './Client'
+import Client, { IClient, RequestParams } from '../Client'
 
 export interface DownloadParams extends RequestParams {
 	filename: string

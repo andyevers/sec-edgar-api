@@ -2,13 +2,11 @@ import { CompanyFactFrame, CompanyFactListData, MultiCompanyFactFrame, ReportRaw
 import ReportParser from '../ReportParser'
 import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
-import FactsDownloader, { DownloadCompanyFactsDirectoryParams, IFactsDownloader } from './FactsDownloader'
 import SecConnector, { GetFactFrameParams, GetFactParams, GetSymbolParams, ISecConnector } from './SecConnector'
 
 interface SecEdgarApiArgs {
 	secConnector: ISecConnector
 	reportParser: ReportParser
-	factsDownloader: IFactsDownloader
 }
 
 /**
@@ -21,19 +19,16 @@ interface SecEdgarApiArgs {
 export default class SecEdgarApi {
 	private readonly reportParser: ReportParser
 	private readonly secConnector: ISecConnector
-	private readonly factsDownloader: IFactsDownloader
 
 	constructor(
 		args: SecEdgarApiArgs = {
 			secConnector: new SecConnector(),
 			reportParser: new ReportParser(),
-			factsDownloader: new FactsDownloader(),
 		},
 	) {
-		const { secConnector, reportParser, factsDownloader } = args
+		const { secConnector, reportParser } = args
 		this.secConnector = secConnector
 		this.reportParser = reportParser
-		this.factsDownloader = factsDownloader
 	}
 
 	/**
@@ -118,16 +113,5 @@ export default class SecEdgarApi {
 	public async getReportsRaw(params: GetSymbolParams & ParseReportsOptions): Promise<ReportRaw[]> {
 		const facts = await this.getFacts(params)
 		return this.reportParser.parseReportsRaw(facts)
-	}
-
-	/**
-	 * Downloads the companyfacts.zip file and extracts the directory containing all company
-	 * reports available from sec.gov. After downloading, you can use factFileReader and reportParser
-	 * to get and read reports.
-	 *
-	 * Note: Over 15GB of data is downloaded and extracted.
-	 */
-	public async downloadCompanyFactsDirectory(params: DownloadCompanyFactsDirectoryParams): Promise<boolean> {
-		return this.factsDownloader.downloadCompanyFactsDirectory(params)
 	}
 }

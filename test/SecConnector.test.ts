@@ -1,4 +1,4 @@
-import { IClient } from '../src/services/SecEdgarApi/Client'
+import { IClient } from '../src/services/Client'
 import SecConnector from '../src/services/SecEdgarApi/SecConnector'
 import { IThrottler } from '../src/services/SecEdgarApi/Throttler'
 

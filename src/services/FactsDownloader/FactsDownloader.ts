@@ -40,6 +40,13 @@ export default class FactsDownloader implements IFactsDownloader {
 		this.downloader = downloader
 	}
 
+	/**
+	 * Downloads the companyfacts.zip file and extracts the directory containing all company
+	 * reports available from sec.gov. After downloading, you can use factFileReader and reportParser
+	 * to get and read reports.
+	 *
+	 * Note: Over 15GB of data is downloaded and extracted.
+	 */
 	public async downloadCompanyFactsDirectory(params: DownloadCompanyFactsDirectoryParams): Promise<boolean> {
 		const { outputDirname, onChunk, onDownloadComplete, onError, onComplete, unzip = true } = params
 
