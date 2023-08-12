@@ -2,12 +2,10 @@ import Throttler from '../src/services/SecEdgarApi/Throttler'
 
 describe('Throttler', () => {
 	test('add', async () => {
-		const throttler = new Throttler()
-
 		const delayMs = 50
 		const countPromises = 10
 
-		throttler.setDelayMs(delayMs)
+		const throttler = new Throttler({ delayMs, maxConcurrent: 1 })
 
 		const promises = Array.from({ length: countPromises }).map((_, i) => {
 			return new Promise((resolve) => throttler.add(async () => resolve(i)))

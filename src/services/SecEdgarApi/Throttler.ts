@@ -18,11 +18,11 @@ export interface IThrottler {
 }
 
 export default class Throttler implements IThrottler {
+	private readonly decrementTimeouts: Set<NodeJS.Timeout>
 	private readonly queue: (() => Promise<any>)[]
 	private readonly results: any[]
 	private readonly errors: any[]
 
-	private countRunning: number
 	private maxConcurrent: number
 	private delayMs: number
 
@@ -32,12 +32,12 @@ export default class Throttler implements IThrottler {
 	public onEnd?: (results: any[], errors: any[]) => void
 
 	constructor(args: ThrottlerArgs = {}) {
-		const { maxConcurrent = 1, delayMs = 120, onProgress, onResult, onError, onEnd } = args
+		const { maxConcurrent = 10, delayMs = 1100, onProgress, onResult, onError, onEnd } = args
 
 		this.maxConcurrent = maxConcurrent
 		this.delayMs = delayMs
-		this.countRunning = 0
 
+		this.decrementTimeouts = new Set()
 		this.queue = []
 		this.results = []
 		this.errors = []
@@ -46,10 +46,6 @@ export default class Throttler implements IThrottler {
 		this.onResult = onResult
 		this.onError = onError
 		this.onEnd = onEnd
-	}
-
-	public setMaxConcurrent(maxConcurrent: number) {
-		this.maxConcurrent = maxConcurrent
 	}
 
 	public setDelayMs(delayMs: number) {
@@ -62,19 +58,27 @@ export default class Throttler implements IThrottler {
 	}
 
 	private async run() {
-		if (this.countRunning >= this.maxConcurrent) {
+		const countRunning = this.decrementTimeouts.size
+		if (countRunning >= this.maxConcurrent) {
 			return
 		}
 
 		if (this.queue.length === 0) {
-			if (this.countRunning === 0) {
+			if (countRunning === 0) {
 				this.onEnd?.(this.results, this.errors)
 			}
 			return
 		}
 
-		this.countRunning++
 		const fn = this.queue.shift() as () => Promise<any>
+
+		// record the request before it is made
+		const decrementTimeout = setTimeout(() => {
+			this.decrementTimeouts.delete(decrementTimeout)
+			this.run()
+		}, this.delayMs)
+
+		this.decrementTimeouts.add(decrementTimeout)
 
 		try {
 			const result = await fn()
@@ -85,12 +89,9 @@ export default class Throttler implements IThrottler {
 			this.onError?.(err)
 		}
 
-		this.countRunning--
 		this.onProgress?.({
 			queueLength: this.queue.length,
-			countRunning: this.countRunning,
+			countRunning: this.decrementTimeouts.size,
 		})
-
-		setTimeout(() => this.run(), this.delayMs)
 	}
 }
