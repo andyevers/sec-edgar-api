@@ -1,12 +1,25 @@
-import { CompanyFactFrame, CompanyFactListData, MultiCompanyFactFrame, ReportRaw, SubmissionList } from '../../types'
+import {
+	CompanyFactFrame,
+	CompanyFactListData,
+	FilingListDetails,
+	FilingListItemTranslated,
+	MultiCompanyFactFrame,
+	ReportRaw,
+	SubmissionList,
+} from '../../types'
 import ReportParser from '../ReportParser'
 import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
-import SecConnector, { GetFactFrameParams, GetFactParams, GetSymbolParams, ISecConnector } from './SecConnector'
+import SecConnector, { GetDocumentXMLParams, GetFactFrameParams, GetFactParams, GetSymbolParams } from './SecConnector'
 
 interface SecEdgarApiArgs {
-	secConnector: ISecConnector
+	secConnector: SecConnector
 	reportParser: ReportParser
+}
+
+interface GetSubmissionsParams {
+	symbol: string
+	includeTranslated?: boolean
 }
 
 /**
@@ -18,7 +31,7 @@ interface SecEdgarApiArgs {
  */
 export default class SecEdgarApi {
 	private readonly reportParser: ReportParser
-	private readonly secConnector: ISecConnector
+	private readonly secConnector: SecConnector
 
 	constructor(
 		args: SecEdgarApiArgs = {
@@ -41,8 +54,28 @@ export default class SecEdgarApi {
 	 * additional filings, files will contain an array of additional JSON files and the
 	 * date range for the filings each one contains.
 	 */
-	public async getSubmissions(params: GetSymbolParams): Promise<SubmissionList> {
-		return this.secConnector.getSubmissions(params)
+	public async getSubmissions(params: GetSubmissionsParams): Promise<SubmissionList> {
+		const { includeTranslated } = params
+		const submissions = await this.secConnector.getSubmissions(params)
+
+		if (!includeTranslated) return submissions
+
+		const filingListDetails = submissions.filings.recent
+		const filings: FilingListItemTranslated[] = []
+
+		for (const key in filingListDetails) {
+			const k = key as keyof FilingListDetails
+			const dataArr = filingListDetails[k]
+
+			for (let i = 0; i < dataArr.length; i++) {
+				filings[i] = filings[i] ?? {}
+				const filing = filings[i] as unknown as Record<string, string | number>
+				filing[k] = dataArr[i]
+			}
+		}
+		submissions.filings.recentTranslated = filings
+
+		return submissions
 	}
 
 	/**
@@ -113,5 +146,21 @@ export default class SecEdgarApi {
 	public async getReportsRaw(params: GetSymbolParams & ParseReportsOptions): Promise<ReportRaw[]> {
 		const facts = await this.getFacts(params)
 		return this.reportParser.parseReportsRaw(facts)
+	}
+
+	public async getCompanyTickers(): Promise<any> {
+		return this.secConnector.getCompanyTickers()
+	}
+
+	public async getCompanyTickersExchange(): Promise<any> {
+		return this.secConnector.getCompanyTickersExchange()
+	}
+
+	public async getCompanyTickersMf(): Promise<any> {
+		return this.secConnector.getCompanyTickersMf()
+	}
+
+	public async getDocumentXML(params: GetDocumentXMLParams) {
+		return this.secConnector.getDocumentXML(params)
 	}
 }

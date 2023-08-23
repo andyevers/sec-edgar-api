@@ -25,7 +25,7 @@ interface FileData {
 	filingTo: string
 }
 
-interface FilingListDetails {
+export interface FilingListDetails {
 	accessionNumber: string[]
 	filingDate: string[]
 	reportDate: string[]
@@ -42,9 +42,27 @@ interface FilingListDetails {
 	primaryDocDescription: string[]
 }
 
+export interface FilingListItemTranslated {
+	accessionNumber: string
+	filingDate: string
+	reportDate: string
+	acceptanceDateTime: string
+	act: string
+	form: string
+	fileNumber: string
+	filmNumber: string
+	items: string
+	size: number
+	isXBRL: number
+	isInlineXBRL: number
+	primaryDocument: string
+	primaryDocDescription: string
+}
+
 interface FilingList {
 	recent: FilingListDetails
 	files: FileData[]
+	recentTranslated?: FilingListItemTranslated[]
 }
 
 export interface SubmissionList {

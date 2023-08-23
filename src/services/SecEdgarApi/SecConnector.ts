@@ -27,11 +27,10 @@ export interface GetFactFrameParams {
 	taxonomy?: 'us-gaap' | 'dei' | 'invest' | string
 }
 
-export interface ISecConnector {
-	getSubmissions(params: GetSymbolParams): Promise<SubmissionList>
-	getFact(params: GetFactParams): Promise<CompanyFactFrame>
-	getFacts(params: GetSymbolParams): Promise<CompanyFactListData>
-	getFactFrame(params: GetFactFrameParams): Promise<MultiCompanyFactFrame>
+export interface GetDocumentXMLParams {
+	symbol: string
+	accessionNumber: string
+	primaryDocument: string
 }
 
 /**
@@ -39,10 +38,13 @@ export interface ISecConnector {
  *
  * @see https://www.sec.gov/edgar/sec-api-documentation
  */
-export default class SecConnector implements ISecConnector {
+export default class SecConnector {
 	private readonly throttler: IThrottler
 	private readonly client: IClient
 	private readonly cikBySymbol: Record<string, number>
+
+	private readonly baseUrlEdgar = 'https://data.sec.gov'
+	private readonly baseUrlSec = 'https://www.sec.gov'
 
 	constructor(args: SecApiArgs = { client: new Client(), throttler: new Throttler(), cikBySymbol: _cikBySymbol }) {
 		const { client, throttler, cikBySymbol } = args
@@ -56,14 +58,12 @@ export default class SecConnector implements ISecConnector {
 		return cik.toString().padStart(10, '0')
 	}
 
-	private async request<T>(path: string): Promise<T> {
-		const baseUrl = 'https://data.sec.gov'
-
+	private async request<T>(url: string, isText = false): Promise<T> {
 		return new Promise(async (resolve, reject) => {
 			this.throttler.add(async () => {
 				try {
 					const response = await this.client.request({
-						url: `${baseUrl}${path}`,
+						url,
 						onError: (err) => reject(err),
 					})
 
@@ -72,7 +72,7 @@ export default class SecConnector implements ISecConnector {
 						reject(`Request failed with status ${response.statusCode} ${response.message}`)
 					}
 
-					resolve(JSON.parse(responseData as string) as T)
+					resolve((isText ? (responseData as string) : JSON.parse(responseData as string)) as T)
 				} catch (e) {
 					reject(e)
 				}
@@ -83,23 +83,48 @@ export default class SecConnector implements ISecConnector {
 	public async getSubmissions(params: GetSymbolParams): Promise<SubmissionList> {
 		const { symbol } = params
 		const cik = this.getCikString(symbol)
-		return this.request(`/submissions/CIK${cik}.json`)
+		return this.request(`${this.baseUrlEdgar}/submissions/CIK${cik}.json`)
 	}
 
 	public async getFact(params: GetFactParams): Promise<CompanyFactFrame> {
 		const { symbol, fact, taxonomy = 'us-gaap' } = params
 		const cik = this.getCikString(symbol)
-		return this.request(`/api/xbrl/companyconcept/CIK${cik}/${taxonomy}/${fact}.json`)
+		return this.request(`${this.baseUrlEdgar}/api/xbrl/companyconcept/CIK${cik}/${taxonomy}/${fact}.json`)
 	}
 
 	public async getFacts(params: GetSymbolParams): Promise<CompanyFactListData> {
 		const { symbol } = params
 		const cik = this.getCikString(symbol)
-		return this.request(`/api/xbrl/companyfacts/CIK${cik}.json`)
+		return this.request(`${this.baseUrlEdgar}/api/xbrl/companyfacts/CIK${cik}.json`)
 	}
 
 	public async getFactFrame(params: GetFactFrameParams): Promise<MultiCompanyFactFrame> {
 		const { fact, frame, taxonomy = 'us-gaap', unit = 'pure' } = params
-		return this.request(`/api/xbrl/frames/${taxonomy}/${fact}/${unit}/${frame}.json`)
+		return this.request(`${this.baseUrlEdgar}/api/xbrl/frames/${taxonomy}/${fact}/${unit}/${frame}.json`)
+	}
+
+	public async getCompanyTickers() {
+		return this.request(`${this.baseUrlSec}/files/company_tickers.json`)
+	}
+
+	public async getCompanyTickersMf() {
+		return this.request(`${this.baseUrlSec}/files/company_tickers_mf.json`)
+	}
+
+	public async getCompanyTickersExchange() {
+		return this.request(`${this.baseUrlSec}/files/company_tickers_exchange.json`)
+	}
+
+	public async getDataList() {
+		return this.request(`${this.baseUrlSec}/data.json`) //
+	}
+
+	public async getDocumentXML(params: GetDocumentXMLParams) {
+		const { accessionNumber, primaryDocument, symbol } = params
+		const cik = this.cikBySymbol[symbol]
+		return this.request<string>(
+			`${this.baseUrlSec}/Archives/edgar/data/${cik}/${accessionNumber.replace(/-/g, '')}/${primaryDocument}`,
+			true,
+		)
 	}
 }
