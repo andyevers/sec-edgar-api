@@ -1,6 +1,8 @@
 import { IClient } from '../src/services/Client'
+import SecEdgarApi from '../src/services/SecEdgarApi'
 import SecConnector from '../src/services/SecEdgarApi/SecConnector'
 import { IThrottler } from '../src/services/SecEdgarApi/Throttler'
+import * as fs from 'fs'
 
 describe('SecConnector', () => {
 	const client: IClient = {

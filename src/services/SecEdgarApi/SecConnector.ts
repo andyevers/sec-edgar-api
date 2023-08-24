@@ -53,9 +53,14 @@ export default class SecConnector {
 		this.cikBySymbol = cikBySymbol
 	}
 
-	private getCikString(symbol: string) {
-		const cik = this.cikBySymbol[symbol] ?? ''
-		return cik.toString().padStart(10, '0')
+	/**
+	 * If symbol is not in cikBySymbol, assume it is a cik
+	 */
+	public getCikString(symbol: string) {
+		const cik = this.cikBySymbol[symbol]
+		if (cik) return cik.toString().padStart(10, '0')
+		if (!isNaN(Number(symbol))) return Number(symbol).toString().padStart(10, '0')
+		throw new Error(`${symbol} is not a known symbol or valid cik`)
 	}
 
 	private async request<T>(url: string, isText = false): Promise<T> {
@@ -126,5 +131,9 @@ export default class SecConnector {
 			`${this.baseUrlSec}/Archives/edgar/data/${cik}/${accessionNumber.replace(/-/g, '')}/${primaryDocument}`,
 			true,
 		)
+	}
+
+	public async getDocumentXMLByUrl(params: { url: string }) {
+		return this.request<string>(params.url, true)
 	}
 }

@@ -21,7 +21,10 @@ interface IterateTablesParams {
 export default class XMLParser {
 	public iterateXML(params: Parse2Params): string[] {
 		const { xml, onCharacter, onCloseTag, onOpenTag } = params
+
 		const selfEnclosingTags = new Set([
+			'filename',
+			'description',
 			'br',
 			'meta',
 			'link',
@@ -66,7 +69,7 @@ export default class XMLParser {
 						xml[i] === '/'
 
 					if (!didEndTagName) {
-						curTag += xml[i]
+						curTag += xml[i].toLowerCase()
 					}
 
 					i++
@@ -78,7 +81,7 @@ export default class XMLParser {
 
 				// map path for non-self-enclosing tags
 				if (!selfEnclosingTags.has(curTag)) {
-					curPath = `${curPath}${curPath.length > 0 ? '.' : ''}${curTag}`
+					curPath = `${curPath}${curPath.length > 0 ? '.' : ''}${curTag}`.toLowerCase()
 					const pathOccurrenceCount = pathOccurrenceCountMap.get(curPath) ?? 0
 					pathOccurrenceCountMap.set(curPath, pathOccurrenceCount + 1)
 					pathsArr.push(curPath)
@@ -122,7 +125,7 @@ export default class XMLParser {
 	 * Returns text in each table cell mapped by `${table}.${row}.${col}`
 	 */
 	public getTableTextMap(params: IterateTablesParams) {
-		const { xml, parentPath = 'html.body', trimSpaces = true } = params
+		const { xml, parentPath, trimSpaces = true } = params
 
 		const rowPaths = new Set([
 			`${parentPath}.table.tbody.tr`,
@@ -154,18 +157,26 @@ export default class XMLParser {
 			onOpenTag: ({ path }) => {
 				const colKey = `${table}.${row}.${col}`
 				const textCur = textByColKey.get(colKey) ?? ''
+				const pathLower = path.toLowerCase()
+
 				if (textCur.trim().length === 0 && col === 0) {
 					textByColKey.delete(colKey)
 				}
 
-				if (path === `${parentPath}.table`) {
+				const isTable = parentPath ? pathLower === `${parentPath}.table` : pathLower.endsWith('table')
+				const isRow = parentPath ? rowPaths.has(pathLower) : pathLower.endsWith('tr')
+				const isCol = parentPath
+					? colPaths.has(pathLower)
+					: pathLower.endsWith('td') || pathLower.endsWith('th')
+
+				if (isTable) {
 					table++
 					col = 0
 					row = 0
-				} else if (rowPaths.has(path)) {
+				} else if (isRow) {
 					row++
 					col = 0
-				} else if (colPaths.has(path)) {
+				} else if (isCol) {
 					col++
 				}
 			},

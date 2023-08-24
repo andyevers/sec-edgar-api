@@ -1,28 +1,27 @@
-import XMLParser from '../XMLParser'
+import { XMLParams } from '../../types'
+import XMLParser from './XMLParser'
 import parsers from './parsers'
 
-interface XMLParams {
-	xml: string
-}
-
-interface FilingParserArgs {
+interface DocumentParserArgs {
 	parser?: XMLParser
 	parsersByName?: typeof parsers
 }
 
-export default class FilingParser {
+export default class DocumentParser {
 	private readonly parser: XMLParser
 	private readonly parsersByName: typeof parsers
 
-	constructor(args?: FilingParserArgs) {
+	constructor(args?: DocumentParserArgs) {
 		const { parser = new XMLParser(), parsersByName = parsers } = args ?? {}
 		this.parser = parser
 		this.parsersByName = parsersByName
 	}
 
 	public parseInsiderTransactions(params: XMLParams) {
-		const { xml } = params
-		const textMap = this.parser.getTableTextMap({ xml })
-		return this.parsersByName.parseForm4({ textMap })
+		return this.parsersByName.parseForm4(params, this.parser)
+	}
+
+	public parseHolders(params: XMLParams) {
+		return this.parsersByName.parseForm13g(params, this.parser)
 	}
 }

@@ -46,3 +46,15 @@ export interface InsiderTransaction {
 	ownership: string
 	explainationByKey: Partial<Record<keyof InsiderTransaction, string>>
 }
+
+export interface Holder {
+	name: string
+	origin: string
+	shares: number
+	percentOfClass: string
+	votingPowerSole: string | null
+	votingPowerShared: string | null
+	dispositivePowerSole: string | null
+	dispositivePowerShared: string | null
+	typeOfReportingPerson: string | null
+}

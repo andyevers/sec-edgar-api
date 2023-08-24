@@ -57,6 +57,7 @@ export default class SecEdgarApi {
 	public async getSubmissions(params: GetSubmissionsParams): Promise<SubmissionList> {
 		const { includeTranslated } = params
 		const submissions = await this.secConnector.getSubmissions(params)
+		const cik = Number(this.secConnector.getCikString(params.symbol))
 
 		if (!includeTranslated) return submissions
 
@@ -73,6 +74,13 @@ export default class SecEdgarApi {
 				filing[k] = dataArr[i]
 			}
 		}
+
+		for (const filing of filings) {
+			const accessionStr = filing.accessionNumber.replace(/-/g, '')
+			const primaryDocument = filing.primaryDocument
+			filing.url = `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionStr}/${primaryDocument}`
+		}
+
 		submissions.filings.recentTranslated = filings
 
 		return submissions
@@ -162,5 +170,9 @@ export default class SecEdgarApi {
 
 	public async getDocumentXML(params: GetDocumentXMLParams) {
 		return this.secConnector.getDocumentXML(params)
+	}
+
+	public async getDocumentXMLByUrl(params: { url: string }) {
+		return this.secConnector.getDocumentXMLByUrl(params)
 	}
 }

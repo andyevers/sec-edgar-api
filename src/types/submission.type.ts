@@ -57,6 +57,7 @@ export interface FilingListItemTranslated {
 	isInlineXBRL: number
 	primaryDocument: string
 	primaryDocDescription: string
+	url: string
 }
 
 interface FilingList {

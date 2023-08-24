@@ -1,16 +1,15 @@
-import { InsiderTransaction, TransactionCode } from '../../../types'
-
-interface XMLParams {
-	textMap: Map<string, string>
-}
+import { InsiderTransaction, TransactionCode, XMLParams } from '../../../types'
+import XMLParser from '../XMLParser'
 
 /**
  * Form 4 - Insider Transactions
  *
  * example at https://www.sec.gov/Archives/edgar/data/320193/000032019323000079/xslF345X05/wk-form4_1691533817.xml
  */
-export function parseForm4(params: { textMap: Map<string, string> }): InsiderTransaction[] {
-	const { textMap } = params
+export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): InsiderTransaction[] {
+	const { xml } = params
+
+	const textMap = xmlParser.getTableTextMap({ xml, parentPath: 'html.body' })
 
 	const getTextBetween = (text: string, before: string, after?: string) => {
 		const indexBefore = text.indexOf(before)
@@ -18,14 +17,10 @@ export function parseForm4(params: { textMap: Map<string, string> }): InsiderTra
 		return text.substring(indexBefore + before.length, indexAfter).trim()
 	}
 
-	const getText = (colKey: string, before: string, after: string) => {
-		return getTextBetween(textMap.get(colKey) ?? '', before, after)
-	}
-
-	const filterNameText = getText('2.1.1', '1. Name and Address of Reporting Person*', '(Last)')
-	const company = getText('2.1.2', '2. Issuer Name and Ticker or Trading Symbol', '[')
-
 	const relationText = textMap.get('2.1.3') ?? ''
+	const filerNameText = textMap.get('2.1.1') ?? ''
+
+	const filterNameText = getTextBetween(filerNameText, '1. Name and Address of Reporting Person*', '(Last)')
 
 	const isDirector = relationText.substring(0, relationText.indexOf('Director')).includes('X')
 	const isOwner10 = getTextBetween(relationText, 'Director', '10% Owner').includes('X')
@@ -63,6 +58,7 @@ export function parseForm4(params: { textMap: Map<string, string> }): InsiderTra
 	}
 
 	const toDate = (str: string) => {
+		if (str === '') return ''
 		const [month, day, year] = str.split('/')
 		return [month, day, year].some((x) => x === undefined) ? '' : `${year}-${month}-${day}`
 	}
@@ -74,9 +70,9 @@ export function parseForm4(params: { textMap: Map<string, string> }): InsiderTra
 		securityType: '',
 		securityTypeUnderlying: null,
 		date: '',
-		dateExecuted: '',
-		dateExpiration: '',
-		dateExercisable: '',
+		dateExecuted: null,
+		dateExpiration: null,
+		dateExercisable: null,
 		transactionType: null,
 		transactionCode: null,
 		transactionDescription: null,
@@ -154,8 +150,12 @@ export function parseForm4(params: { textMap: Map<string, string> }): InsiderTra
 					transaction.transactionCode = text as TransactionCode
 					continue
 				case 'date':
+					transaction.date = toDate(text)
+					continue
 				case 'dateExecuted':
-					transaction[colName] = toDate(text)
+				case 'dateExercisable':
+				case 'dateExpiration':
+					transaction[colName] = toDate(text) || null
 					continue
 				case 'price':
 				case 'shares':
@@ -205,9 +205,10 @@ export function parseForm4(params: { textMap: Map<string, string> }): InsiderTra
 					transaction.transactionDescription = codeTranslations[text] ?? ''
 					transaction.transactionCode = text as TransactionCode
 					continue
-				case 'date':
 				case 'dateExecuted':
-					transaction[colName] = toDate(text)
+				case 'dateExercisable':
+				case 'dateExpiration':
+					transaction[colName] = toDate(text) || null
 					continue
 				case 'price':
 				case 'shares':
