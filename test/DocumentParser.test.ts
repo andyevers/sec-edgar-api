@@ -68,6 +68,7 @@ describe('DocumentParser', () => {
 	test('parseHolders', () => {
 		const result = documentParser.parseHolders({ xml: form13gXML })
 
+		console.log(result.length)
 		expect(result.length).toBe(7)
 		expect(result[0].name).toBe('Warren E. Buffett')
 		expect(result[0].origin).toBe('United States Citizen')

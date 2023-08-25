@@ -13,61 +13,71 @@ export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Ho
 
 	const holders: Holder[] = []
 
-	const header: (keyof Holder)[] = [
-		'name',
-		'origin',
-		'votingPowerSole',
-		'votingPowerShared',
-		'dispositivePowerSole',
-		'dispositivePowerShared',
-		'shares',
-		'percentOfClass',
-		'typeOfReportingPerson',
-	]
-	const rowColKeys = ['2.3', '5.3', '6.5', '7.4', '8.4', '9.4', '10.3', '12.3', '13.3']
-
-	for (let row = 3; row < 10_000; row += 2) {
-		const keyFirst = `${row}.${rowColKeys[0]}`
-		const isComplete = !textMap.has(keyFirst) || !textMap.get(keyFirst)?.toLowerCase().includes('name')
-		if (isComplete) break
-
-		const holder: Holder = {
-			name: '',
-			origin: '',
-			shares: 0,
-			percentOfClass: '',
-			votingPowerSole: null,
-			votingPowerShared: null,
-			dispositivePowerSole: null,
-			dispositivePowerShared: null,
-			typeOfReportingPerson: null,
+	const getKey = (text: string): keyof Holder | null => {
+		const keyMap: Record<string, keyof Holder> = {
+			'name of reporting': 'name',
+			'names of reporting': 'name',
+			'citizenship or place': 'origin',
+			'sole voting power': 'votingPowerSole',
+			'shared voting power': 'votingPowerShared',
+			'sole dispositive power': 'dispositivePowerSole',
+			'shared dispositive power': 'dispositivePowerShared',
+			'aggregate amount beneficially owned': 'shares',
+			'percent of class': 'percentOfClass',
+			'type of reporting person': 'typeOfReportingPerson',
 		}
 
-		for (let i = 0; i < rowColKeys.length; i++) {
-			const key = `${row}.${rowColKeys[i]}`
-			const colName = header[i]
-			const text = textMap.get(key) ?? ''
-			const value = text.substring(text.lastIndexOf('&nbsp;') + '&nbsp;'.length).trim()
-
-			switch (colName) {
-				case 'shares':
-					holder.shares = Number(value.replace(/[^0-9]/g, '')) || 0
-					break
-				case 'typeOfReportingPerson':
-					holder[colName] = value === '' ? null : value
-					break
-				case 'votingPowerSole':
-				case 'votingPowerShared':
-				case 'dispositivePowerSole':
-				case 'dispositivePowerShared':
-					holder[colName] = value.toLowerCase() === 'none' ? null : value
-					break
-				default:
-					holder[colName] = value
-			}
+		const textLower = text.toLowerCase()
+		for (const key in keyMap) {
+			if (textLower.includes(key)) return keyMap[key]
 		}
 
-		holders.push(holder)
+		return null
+	}
+
+	for (const text of Array.from(textMap.values())) {
+		const colName = getKey(text)
+		const isNewHolder = colName === 'name'
+
+		if (isNewHolder) {
+			holders.push({
+				name: '',
+				origin: '',
+				shares: 0,
+				percentOfClass: '',
+				votingPowerSole: null,
+				votingPowerShared: null,
+				dispositivePowerSole: null,
+				dispositivePowerShared: null,
+				typeOfReportingPerson: null,
+			})
+		}
+
+		const holder = holders[holders.length - 1]
+
+		// continue if no colName or if the value is already set
+		if (colName === null || ![0, '', null].includes(holder[colName])) continue
+
+		const textParts = text.split('&nbsp;').filter((t) => t.trim() !== '')
+		const colNameIndex = textParts.findIndex((t) => getKey(t) === colName)
+		const value = textParts[colNameIndex + 1]?.trim() ?? ''
+
+		switch (colName) {
+			case 'shares':
+				holder.shares = Number(value.replace(/[^0-9]/g, '')) || 0
+				break
+			case 'typeOfReportingPerson':
+				holder[colName] = value === '' ? null : value
+				break
+			case 'votingPowerSole':
+			case 'votingPowerShared':
+			case 'dispositivePowerSole':
+			case 'dispositivePowerShared':
+				holder[colName] = value.toLowerCase() === 'none' ? null : value
+				break
+			default:
+				holder[colName] = value
+		}
 	}
 
 	return holders

@@ -1,13 +1,16 @@
 import { IClient } from '../src/services/Client'
-import SecEdgarApi from '../src/services/SecEdgarApi'
-import SecConnector from '../src/services/SecEdgarApi/SecConnector'
 import { IThrottler } from '../src/services/SecEdgarApi/Throttler'
-import * as fs from 'fs'
+import SecEdgarApi from '../src/services/SecEdgarApi'
+import ReportParser from '../src/services/ReportParser'
+import DocumentParser from '../src/services/DocumentParser'
 
-describe('SecConnector', () => {
+describe('SecEdgarApi', () => {
 	const client: IClient = {
 		request: () => new Promise((resolve) => resolve({ data: Buffer.from('{}'), message: '', statusCode: 200 })),
 	}
+
+	const reportParser = new ReportParser()
+	const documentParser = new DocumentParser()
 
 	const throttler: IThrottler = {
 		add: (fn) => fn(),
@@ -18,12 +21,12 @@ describe('SecConnector', () => {
 		AAPL: 123,
 	}
 
-	const secConnector = new SecConnector({ cikBySymbol, throttler, client })
+	const secEdgarApi = new SecEdgarApi({ cikBySymbol, throttler, client, reportParser, documentParser })
 
 	test('getFact', async () => {
 		const add = jest.spyOn(throttler, 'add')
 		const request = jest.spyOn(client, 'request')
-		await secConnector.getFact({ symbol: 'AAPL', fact: 'NetIncomeLoss' })
+		await secEdgarApi.getFact({ symbol: 'AAPL', fact: 'NetIncomeLoss' })
 
 		expect(add).toHaveBeenCalledTimes(1)
 		expect(request).toBeCalledTimes(1)
@@ -36,7 +39,7 @@ describe('SecConnector', () => {
 
 	test('getFacts', async () => {
 		const request = jest.spyOn(client, 'request')
-		await secConnector.getFacts({ symbol: 'AAPL' })
+		await secEdgarApi.getFacts({ symbol: 'AAPL' })
 
 		expect(request).toHaveBeenCalledWith({
 			url: 'https://data.sec.gov/api/xbrl/companyfacts/CIK0000000123.json',
@@ -46,7 +49,7 @@ describe('SecConnector', () => {
 
 	test('getSubmissions', async () => {
 		const request = jest.spyOn(client, 'request')
-		await secConnector.getSubmissions({ symbol: 'AAPL' })
+		await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 
 		expect(request).toHaveBeenCalledWith({
 			url: 'https://data.sec.gov/submissions/CIK0000000123.json',
@@ -56,7 +59,7 @@ describe('SecConnector', () => {
 
 	test('getFactFrame', async () => {
 		const request = jest.spyOn(client, 'request')
-		await secConnector.getFactFrame({ fact: 'AccountsPayable', taxonomy: 'dei', frame: 'CY2023Q3I', unit: 'USD' })
+		await secEdgarApi.getFactFrame({ fact: 'AccountsPayable', taxonomy: 'dei', frame: 'CY2023Q3I', unit: 'USD' })
 
 		expect(request).toHaveBeenCalledWith({
 			url: 'https://data.sec.gov/api/xbrl/frames/dei/AccountsPayable/USD/CY2023Q3I.json',
