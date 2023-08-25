@@ -40,6 +40,9 @@ export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Ho
 		const isNewHolder = colName === 'name'
 
 		if (isNewHolder) {
+			if (holders[holders.length - 1]?.name === '') {
+				holders.pop()
+			}
 			holders.push({
 				name: '',
 				origin: '',
@@ -78,6 +81,10 @@ export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Ho
 			default:
 				holder[colName] = value
 		}
+	}
+
+	if (holders[holders.length - 1]?.name === '') {
+		holders.pop()
 	}
 
 	return holders

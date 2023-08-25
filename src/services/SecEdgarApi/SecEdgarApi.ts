@@ -31,6 +31,8 @@ export interface CreateRequestWrapperParams {
 	/** symbol or cik */
 	symbol: string | number
 	filings: FilingListDetails | FilingListItemTranslated[]
+	/** earliest allowed filing date that is allowed to be fetched */
+	cutoffDate?: Date
 }
 
 export interface GetSymbolParams {
@@ -150,6 +152,17 @@ export default class SecEdgarApi {
 		}
 
 		return filings
+	}
+
+	private getCreateRequestUrls(params: CreateRequestWrapperParams, forms: string[]) {
+		const { symbol, filings, cutoffDate = new Date('1970-01-01') } = params
+		const cik = this.getCikString(symbol)
+		const filingsArr = Array.isArray(filings) ? filings : this.mapFilingListDetails(cik, filings)
+		const filingsFiltered = filingsArr.filter(
+			({ form, filingDate }) => forms.includes(form) && new Date(filingDate).getTime() > cutoffDate.getTime(),
+		)
+		const urls = filingsFiltered.filter(({ form }) => forms.includes(form)).map(({ url }) => url)
+		return urls
 	}
 
 	/**
@@ -332,11 +345,7 @@ export default class SecEdgarApi {
 	 * ```
 	 */
 	public createRequestInsiderTransactions(params: CreateRequestWrapperParams): RequestWrapper<InsiderTransaction> {
-		const cik = this.getCikString(params.symbol)
-		const filings = Array.isArray(params.filings) ? params.filings : this.mapFilingListDetails(cik, params.filings)
-		const forms = ['4', '4/A', '5', '5/A']
-		const urls = filings.filter(({ form }) => forms.includes(form)).map(({ url }) => url)
-
+		const urls = this.getCreateRequestUrls(params, ['4', '4/A', '5', '5/A'])
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseInsiderTransactions({ xml: await this.getDocumentXMLByUrl(params) })
 
@@ -355,11 +364,7 @@ export default class SecEdgarApi {
 	 * ```
 	 */
 	public createRequestHolders(params: CreateRequestWrapperParams): RequestWrapper<Holder> {
-		const cik = this.getCikString(params.symbol)
-		const filings = Array.isArray(params.filings) ? params.filings : this.mapFilingListDetails(cik, params.filings)
-		const forms = ['SC 13G', 'SC 13G/A']
-		const urls = filings.filter(({ form }) => forms.includes(form)).map(({ url }) => url)
-
+		const urls = this.getCreateRequestUrls(params, ['SC 13G', 'SC 13G/A'])
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseHolders({ xml: await this.getDocumentXMLByUrl(params) })
 
