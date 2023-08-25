@@ -101,4 +101,8 @@ export default class RequestWrapper<T> {
 	public getErrors() {
 		return this.errors
 	}
+
+	public getSize() {
+		return this.urls.length
+	}
 }

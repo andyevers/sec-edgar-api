@@ -33,6 +33,7 @@ export interface CreateRequestWrapperParams {
 	filings: FilingListDetails | FilingListItemTranslated[]
 	/** earliest allowed filing date that is allowed to be fetched */
 	cutoffDate?: Date
+	maxRequests?: number
 }
 
 export interface GetSymbolParams {
@@ -346,10 +347,11 @@ export default class SecEdgarApi {
 	 */
 	public createRequestInsiderTransactions(params: CreateRequestWrapperParams): RequestWrapper<InsiderTransaction> {
 		const urls = this.getCreateRequestUrls(params, ['4', '4/A', '5', '5/A'])
+		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseInsiderTransactions({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new RequestWrapper<InsiderTransaction>({ urls, sendRequest })
+		return new RequestWrapper<InsiderTransaction>({ urls, options, sendRequest })
 	}
 
 	/**
@@ -365,9 +367,10 @@ export default class SecEdgarApi {
 	 */
 	public createRequestHolders(params: CreateRequestWrapperParams): RequestWrapper<Holder> {
 		const urls = this.getCreateRequestUrls(params, ['SC 13G', 'SC 13G/A'])
+		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseHolders({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new RequestWrapper<Holder>({ urls, sendRequest })
+		return new RequestWrapper<Holder>({ urls, options, sendRequest })
 	}
 }

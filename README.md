@@ -1,7 +1,14 @@
-# sec-edgar-api
+# SEC Edgar API
 
 Fetch and parse earnings reports and other documents filed with the SEC using the EDGAR API.
 This package is focused on the earnings reports for stock analysis.
+
+Some main data points available include:
+
+-   Earnings Reports
+-   Insider Transactions
+-   Institutional Holders
+-   Filing History
 
 ## Installation
 
@@ -93,7 +100,7 @@ interface ReportTranslated {
 import package contents
 
 ```TS
-import { factFileReader, reportParser, secEdgarApi } from 'sec-edgar-api'
+import { secEdgarApi } from 'sec-edgar-api'
 ```
 
 You can fetch reports individually directly from the SEC website, (throttled to 10 requests per second)
@@ -101,38 +108,6 @@ You can fetch reports individually directly from the SEC website, (throttled to 
 ```TS
 // returns array of ReportWrapper (which implements ReportTranslated)
 const reports = await secEdgarApi.getReports({ symbol: 'AAPL' })
-```
-
-or download all data from the SEC website and read directly from the files so you don't have to worry about rate limiting.
-
-```TS
-import { factsDownloader } from 'sec-edgar-api/downloader'
-
-const downloadDirectory = './downloads/companyfacts'
-
-// Download companyfacts directory from sec.gov (over 15GB)
-await factsDownloader.downloadCompanyFactsDirectory({
-    outputDirname: downloadDirectory,
-    onDownloadComplete: () => process.stdout.write('\n'),
-    onChunk: ({ percentComplete, stage }) => {
-        // Write progress bar to console
-        const countBarsComplete = Math.ceil(percentComplete * 30)
-        const barStr = `${'='.repeat(countBarsComplete)}${' '.repeat(30 - countBarsComplete)}`
-        const percentStr = `${(Math.round(percentComplete * 10000) / 100).toFixed(2)}%`
-        const statusStr = stage === 'download' ? 'Downloading...' : 'Unzipping...'
-
-        process.stdout.write(`\r<${barStr}> ${percentStr} ${statusStr}`)
-    },
-})
-
-// read companyfacts directory
-const companyFacts = factFileReader.readFactFile({
-    companyFactsDirname: downloadDirectory,
-    symbol: 'AAPL',
-})
-
-// parse reports (same return value as secEdgarApi.getReports())
-const reports = reportParser.parseReports(companyFacts)
 ```
 
 ## Resolvers
@@ -169,17 +144,6 @@ Files for mapping & resolving properties:
 
 -   Mapping properties: `src/util/key-translations.ts`
 -   Resolving properties: `src/services/ReportParser.ts` (add resolvers to the `resolvers/` directory, import to `/resolver/index.ts`, and add to ReportParser.resolveAll)
-
-These are the scripts I used to get keys commonly used across reports, which you can use to add to `key-translations.ts`
-
-```TS
-import { readAllCompanyFactFiles, getPropertyUsageCounts } from './scripts/script-helpers'
-
-const companyFactsList = readAllCompanyFactFiles(path.resolve('./downloads/companyfacts'), 10)
-const propertyUsageCounts = getPropertyUsageCounts(companyFactsList)
-
-fs.writeFileSync('./downloads/property-usage-counts.json', JSON.stringify(propertyUsageCounts, null, 2))
-```
 
 ### Resources
 
