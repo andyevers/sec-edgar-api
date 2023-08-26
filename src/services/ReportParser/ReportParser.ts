@@ -43,18 +43,21 @@ export default class ReportParser {
 	 *
 	 * @param companyFactListData This is the json file contents of CIK[number].json file from the SEC website. You can find these using their API or by downloading the companyfacts.zip file: https://www.sec.gov/edgar/sec-api-documentation
 	 */
-	public parseReports(companyFactListData: Pick<CompanyFactListData, 'facts'>): ReportWrapper[] {
+	public parseReports(
+		companyFactListData: Pick<CompanyFactListData, 'facts'>,
+		usePropertyResolver = true,
+	): ReportWrapper[] {
 		const reportsRaw = this.reportRawParser.parseReports(companyFactListData, {
 			reportsToInclude: ['ANNUAL', 'QUARTERLY'],
 		})
 
-		return this.parseReportsFromRaw(reportsRaw)
+		return this.parseReportsFromRaw(reportsRaw, usePropertyResolver)
 	}
 
 	/**
 	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
 	 */
-	public parseReportsFromRaw(reportsRaw: ReportRaw[]): ReportWrapper[] {
+	public parseReportsFromRaw(reportsRaw: ReportRaw[], usePropertyResolver = true): ReportWrapper[] {
 		const reportByYearQuarter = new Map<string, ReportWrapper>()
 
 		const reportsRawFiltered = reportsRaw.filter((reportRaw) => {
@@ -69,7 +72,10 @@ export default class ReportParser {
 		})
 
 		const reportWrappers = Array.from(reportByYearQuarter.values())
-		this.propertyResolver.resolveAll(reportWrappers)
+
+		if (usePropertyResolver) {
+			this.propertyResolver.resolveAll(reportWrappers)
+		}
 
 		return reportWrappers
 	}

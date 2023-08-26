@@ -1,8 +1,16 @@
+import SecEdgarApi from '../SecEdgarApi'
+import { ColNode, DocumentNode, HRNode, NonTableNode, RowNode, TableNode, XMLNode } from './XMLNode'
+
 interface OnCharacterData {
 	char: string
 	index: number
 	path: string
 	pathOccurrenceCount: number
+	attributesStr: string
+}
+
+interface ParseTableNodesParams {
+	xml: string
 }
 
 interface Parse2Params {
@@ -16,6 +24,9 @@ interface IterateTablesParams {
 	xml: string
 	parentPath?: string
 	trimSpaces?: boolean
+	onCharacter?: (data: OnCharacterData & { textMap: Map<string, string> }) => void
+	onOpenTag?: (data: OnCharacterData & { textMap: Map<string, string> }) => void
+	onCloseTag?: (data: OnCharacterData & { textMap: Map<string, string> }) => void
 }
 
 export default class XMLParser {
@@ -42,34 +53,41 @@ export default class XMLParser {
 			'track',
 			'wbr',
 		])
+		const spaceChars = new Set(['\n', '\r', '\t', ' '])
 
 		const pathOccurrenceCountMap = new Map<string, number>()
 		let curPath: string = ''
 		let curTag: string = ''
+		let curAttributes: string = ''
 		let didStart = false
 
 		const pathsArr: string[] = []
 
 		for (let i = 0; i < xml.length; i++) {
 			const char = xml[i]
+			const isOpenTag = char === '<' && xml[i + 1] !== '/' && xml[i + 1] !== '?' && xml[i + 1] !== '!'
+			const isCloseTag = char === '<' && xml[i + 1] === '/'
 
-			if (char === '<' && xml[i + 1] !== '/' && xml[i + 1] !== '?' && xml[i + 1] !== '!') {
-				let iOpen = i
+			const onCharacterData: OnCharacterData = {
+				char: char,
+				index: i,
+				path: curPath,
+				pathOccurrenceCount: pathOccurrenceCountMap.get(curPath) ?? 0,
+				attributesStr: curAttributes,
+			}
+
+			if (isOpenTag) {
+				let didEndTagName = false
+				let j = 0
+
 				didStart = true
 				i++
-				let j = 0
-				let didEndTagName = false
 				while (xml[i] !== '>') {
-					didEndTagName =
-						didEndTagName ||
-						xml[i] === ' ' ||
-						xml[i] === '\n' ||
-						xml[i] === '\r' ||
-						xml[i] === '\t' ||
-						xml[i] === '/'
-
+					didEndTagName = didEndTagName || spaceChars.has(xml[i]) || xml[i] === '/'
 					if (!didEndTagName) {
 						curTag += xml[i].toLowerCase()
+					} else if (xml[i] !== '/') {
+						curAttributes += xml[i]
 					}
 
 					i++
@@ -79,42 +97,34 @@ export default class XMLParser {
 					}
 				}
 
-				// map path for non-self-enclosing tags
-				if (!selfEnclosingTags.has(curTag)) {
-					curPath = `${curPath}${curPath.length > 0 ? '.' : ''}${curTag}`.toLowerCase()
-					const pathOccurrenceCount = pathOccurrenceCountMap.get(curPath) ?? 0
-					pathOccurrenceCountMap.set(curPath, pathOccurrenceCount + 1)
-					pathsArr.push(curPath)
+				const pathNew = `${curPath}${curPath.length > 0 ? '.' : ''}${curTag}`.toLowerCase()
+				const countBefore = pathOccurrenceCountMap.get(pathNew) ?? 0
+				const pathOccurrenceCount = pathOccurrenceCountMap.set(pathNew, countBefore + 1).get(pathNew) ?? 0
 
-					onOpenTag?.({
-						char: char,
-						index: iOpen,
-						path: curPath,
-						pathOccurrenceCount: pathOccurrenceCountMap.get(curPath) ?? 0,
-					})
+				onCharacterData.path = pathNew
+				onCharacterData.pathOccurrenceCount = pathOccurrenceCount
+				onCharacterData.attributesStr = curAttributes
+
+				pathsArr.push(pathNew)
+
+				onOpenTag?.(onCharacterData)
+				if (selfEnclosingTags.has(curTag)) {
+					onCloseTag?.(onCharacterData)
+				} else {
+					curPath = pathNew
 				}
 
 				curTag = ''
-			} else if (char === '<' && xml[i + 1] === '/') {
+			} else if (isCloseTag) {
 				while (xml[i] !== '>') {
 					i++
 				}
 
-				onCloseTag?.({
-					char: char,
-					index: i,
-					path: curPath,
-					pathOccurrenceCount: pathOccurrenceCountMap.get(curPath) ?? 0,
-				})
-
+				onCloseTag?.(onCharacterData)
 				curPath = curPath.slice(0, curPath.lastIndexOf('.'))
+				curAttributes = ''
 			} else if (didStart) {
-				onCharacter?.({
-					char: char,
-					index: i,
-					path: curPath,
-					pathOccurrenceCount: pathOccurrenceCountMap.get(curPath) ?? 0,
-				})
+				onCharacter?.(onCharacterData)
 			}
 		}
 
@@ -125,7 +135,7 @@ export default class XMLParser {
 	 * Returns text in each table cell mapped by `${table}.${row}.${col}`
 	 */
 	public getTableTextMap(params: IterateTablesParams) {
-		const { xml, parentPath, trimSpaces = true } = params
+		const { xml, parentPath, onCharacter, onCloseTag, onOpenTag, trimSpaces = true } = params
 
 		const rowPaths = new Set([
 			`${parentPath}.table.tbody.tr`,
@@ -154,7 +164,8 @@ export default class XMLParser {
 
 		this.iterateXML({
 			xml,
-			onOpenTag: ({ path }) => {
+			onOpenTag: (data) => {
+				const { path } = data
 				const colKey = `${table}.${row}.${col}`
 				const textCur = textByColKey.get(colKey) ?? ''
 				const pathLower = path.toLowerCase()
@@ -179,15 +190,18 @@ export default class XMLParser {
 				} else if (isCol) {
 					col++
 				}
+				onOpenTag?.({ ...data, textMap: textByColKey })
 			},
-			onCharacter: ({ char }) => {
-				char = spaceChars.has(char) ? ' ' : char
+			onCharacter: (data) => {
+				const char = spaceChars.has(data.char) ? ' ' : data.char
 				const colKey = `${table}.${row}.${col}`
 				const textCur = textByColKey.get(colKey) ?? ''
-				if (trimSpaces && char === ' ' && textCur.endsWith(' ')) return
-				textByColKey.set(colKey, `${textCur}${char}`)
+				if (!(trimSpaces && char === ' ' && textCur.endsWith(' '))) {
+					textByColKey.set(colKey, `${textCur}${char}`)
+				}
+				onCharacter?.({ ...data, textMap: textByColKey })
 			},
-			onCloseTag: () => {
+			onCloseTag: (data) => {
 				const colKey = `${table}.${row}.${col}`
 				const textCur = textByColKey.get(colKey) ?? ''
 				if (textCur.trim().length === 0 && col === 0) {
@@ -195,9 +209,94 @@ export default class XMLParser {
 				} else if (!textCur.endsWith(' ')) {
 					textByColKey.set(colKey, `${textCur} `)
 				}
+				onCloseTag?.({ ...data, textMap: textByColKey })
 			},
 		})
 
 		return textByColKey
+	}
+
+	public getDocumentNode(params: ParseTableNodesParams) {
+		const { xml } = params
+
+		const rowsArr: XMLNode[] = []
+		const colsArr: XMLNode[] = []
+		const documentNode = new DocumentNode()
+
+		let curNode: XMLNode | null = null
+		let prevRowCols: (ColNode | null)[] = []
+		let curRowCols: (ColNode | null)[] = []
+
+		const pushColToRow = (col: ColNode) => {
+			const colSpan = col.getColSpan()
+			const colIndex = curRowCols.length
+			col.setIndex(colIndex)
+
+			for (let i = 0; i < colSpan; i++) {
+				curRowCols.push(col)
+			}
+
+			const topSibling = prevRowCols[colIndex] ?? null
+			topSibling?.addBottomSibling(col)
+		}
+
+		this.iterateXML({
+			xml,
+			onCharacter: ({ char }) => curNode?.setText((curNode?.getText() ?? '') + char),
+			onOpenTag: ({ path, attributesStr }) => {
+				// skip nested tables
+				if (path.split('.').reduce((acc, cur) => (cur === 'table' ? acc + 1 : acc), 0) > 1) return
+
+				const tag = path.split('.').pop()
+				const isInTable = path.includes('table')
+				const topLevelNodes = documentNode.getChildren()
+				const prevTopLevelNode = topLevelNodes[topLevelNodes.length - 1]
+				const wasHorizontalLine = prevTopLevelNode instanceof HRNode
+				const wasNonTableNode = prevTopLevelNode instanceof NonTableNode
+
+				if (!isInTable) {
+					prevRowCols = []
+					curRowCols = []
+				}
+
+				if (tag === 'hr' && !isInTable) {
+					const hr = new HRNode({ attributesStr, path })
+					hr.setPreviousSibling(prevTopLevelNode ?? null)
+					topLevelNodes.push(hr)
+					curNode = hr
+				} else if (tag === 'table') {
+					const table = new TableNode({ attributesStr, path })
+					table.setPreviousSibling(prevTopLevelNode ?? null)
+					topLevelNodes.push(table)
+					curNode = table
+				} else if (tag === 'tr') {
+					const row = new RowNode({ attributesStr, path })
+					const prevRow = rowsArr[rowsArr.length - 1]
+					row.setParent(prevTopLevelNode)
+					row.setPreviousSibling(prevRow?.getParent() === row.getParent() ? prevRow : null)
+					rowsArr.push(row)
+					prevRowCols = curRowCols
+					curRowCols = []
+					curNode = row
+				} else if (tag === 'td' || tag === 'th') {
+					const col = new ColNode({ attributesStr, path })
+					const prevCol = colsArr[colsArr.length - 1]
+					col.setParent(rowsArr[rowsArr.length - 1])
+					col.setPreviousSibling(prevCol?.getParent() === col.getParent() ? prevCol : null)
+					colsArr.push(col)
+					pushColToRow(col)
+					curNode = col
+				} else if ((!isInTable && !wasNonTableNode) || (wasHorizontalLine && tag !== 'hr')) {
+					const node = new NonTableNode({ attributesStr, path })
+					node.setPreviousSibling(prevTopLevelNode ?? null)
+					topLevelNodes.push(node)
+					curNode = node
+				} else if (curNode && !curNode.getText().endsWith('\n')) {
+					curNode.setText(`${curNode.getText().trim()}\n`)
+				}
+			},
+		})
+
+		return documentNode
 	}
 }

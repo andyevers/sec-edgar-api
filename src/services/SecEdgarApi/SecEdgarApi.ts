@@ -45,6 +45,7 @@ export interface GetReportsParams {
 	/** symbol or cik */
 	symbol: string | number
 	withWrapper?: boolean
+	usePropertyResolver?: boolean
 }
 
 export interface GetFactParams {
@@ -260,9 +261,9 @@ export default class SecEdgarApi {
 	public async getReports<T extends GetReportsParams>(
 		params: T,
 	): Promise<T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]> {
-		const { symbol, withWrapper = false } = params
+		const { symbol, withWrapper = false, usePropertyResolver = true } = params
 		const facts = await this.getFacts({ symbol })
-		const reports = this.reportParser.parseReports(facts)
+		const reports = this.reportParser.parseReports(facts, usePropertyResolver)
 		return withWrapper ? reports : (reports.map((report) => report.getReport()) as any)
 	}
 
