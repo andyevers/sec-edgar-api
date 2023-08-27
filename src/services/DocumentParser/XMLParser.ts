@@ -226,6 +226,8 @@ export default class XMLParser {
 		let curNode: XMLNode | null = null
 		let prevRowCols: (ColNode | null)[] = []
 		let curRowCols: (ColNode | null)[] = []
+		let isBold = false
+		let boldPath: string | null = null
 
 		const pushColToRow = (col: ColNode) => {
 			const colSpan = col.getColSpan()
@@ -242,7 +244,15 @@ export default class XMLParser {
 
 		this.iterateXML({
 			xml,
-			onCharacter: ({ char }) => curNode?.setText((curNode?.getText() ?? '') + char),
+			onCloseTag: () => {
+				if (curNode?.getPath() === boldPath) {
+					curNode?.setText(`${curNode?.getText() ?? ''}}}`)
+					boldPath = null
+				}
+			},
+			onCharacter: ({ char }) => {
+				curNode?.setText((curNode?.getText() ?? '') + char)
+			},
 			onOpenTag: ({ path, attributesStr }) => {
 				// skip nested tables
 				if (path.split('.').reduce((acc, cur) => (cur === 'table' ? acc + 1 : acc), 0) > 1) return
@@ -253,6 +263,16 @@ export default class XMLParser {
 				const prevTopLevelNode = topLevelNodes[topLevelNodes.length - 1]
 				const wasHorizontalLine = prevTopLevelNode instanceof HRNode
 				const wasNonTableNode = prevTopLevelNode instanceof NonTableNode
+				const wasBold = isBold
+
+				const attributesLower = attributesStr.toLowerCase().replace(/\s/g, '')
+				isBold =
+					tag === 'b' ||
+					tag === 'strong' ||
+					attributesLower.includes('font-weight:bold') ||
+					attributesLower.includes('font-weight:700') ||
+					attributesLower.includes('font-weight:800') ||
+					attributesLower.includes('font-weight:900')
 
 				if (!isInTable) {
 					prevRowCols = []
@@ -293,6 +313,14 @@ export default class XMLParser {
 					curNode = node
 				} else if (curNode && !curNode.getText().endsWith('\n')) {
 					curNode.setText(`${curNode.getText().trim()}\n`)
+				}
+
+				if (isBold && !wasBold && !curNode?.getText().endsWith('{{')) {
+					curNode?.setText(`${curNode?.getText().trim()}{{`)
+				}
+
+				if (isBold) {
+					boldPath = curNode?.getPath() ?? null
 				}
 			},
 		})

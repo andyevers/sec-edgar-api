@@ -64,6 +64,10 @@ export class XMLNode {
 		return attributesObj
 	}
 
+	public getAttributesStr() {
+		return this.attributesStr
+	}
+
 	public getChildren() {
 		return this.children
 	}
@@ -89,17 +93,125 @@ export class XMLNode {
 }
 
 export class TableNode extends XMLNode {
+	private title: string | null = null
+	private headerRow: RowNode | null = null
+
+	public getTitle() {
+		return this.title
+	}
+	public setTitle(title: string) {
+		this.title = title
+	}
 	public getChildren(): RowNode[] {
 		return super.getChildren() as RowNode[]
+	}
+
+	public removeTopChild() {
+		this.getChildren().shift()
+
+		const topChild = this.getChildren()[0]
+		topChild?.setPreviousSibling(null)
+
+		topChild?.getChildren().forEach((col) => {
+			while (col.getTopSiblings().length > 0) {
+				col.getTopSiblings().pop()
+			}
+		})
+	}
+
+	public prependChild(node: RowNode) {
+		const prevTopChild = this.getChildren()[0]
+
+		this.getChildren().unshift(node)
+		if (node.getParent() !== this) node.setParent(this)
+
+		prevTopChild?.setPreviousSibling(node)
+
+		const colArrTop: ColNode[] = []
+		const colArrBottom: ColNode[] = []
+
+		node.getChildren().forEach((col) => {
+			colArrTop.push(col)
+			Array.from({ length: col.getColSpan() - 1 }).forEach(() => colArrTop.push(col))
+		})
+
+		prevTopChild?.getChildren().forEach((col, i) => {
+			colArrBottom.push(col)
+			Array.from({ length: col.getColSpan() - 1 }).forEach(() => colArrBottom.push(col))
+			if (!col.getTopSiblings().includes(colArrTop[i])) {
+				col.addTopSibling(colArrTop[i])
+			}
+		})
 	}
 
 	public toArray() {
 		return this.getChildren().map((row) => row.toArray())
 	}
+
+	public setHeaderRow(row: RowNode) {
+		this.headerRow = row
+	}
+
+	/**
+	 * If header row is not set, this will try to find it.
+	 */
+	public getHeaderRow() {
+		if (this.headerRow) return this.headerRow
+		const rows = this.getChildren()
+
+		const isColoredRow = (row: RowNode) => {
+			const firstColAttStr = row.getChildren()[0].getAttributesStr().toLowerCase().replace(/\s/g, '')
+			const bgColor = firstColAttStr.split('background-color:#')[1] ?? null
+			return bgColor && !bgColor.startsWith('fff') && !bgColor.startsWith('transparent')
+		}
+
+		const isStriped = rows.some((row) => isColoredRow(row)) && rows.some((row) => !isColoredRow(row))
+		const indexColored = isStriped ? rows.findIndex((row) => isColoredRow(row)) : -1
+		const rowBeforeColored = rows[indexColored - 2] ?? null
+
+		if (rowBeforeColored?.getIsEmpty() === false) return rowBeforeColored
+
+		return null
+	}
 }
 
 export class RowNode extends XMLNode {
-	private cols: (string | null)[] | null = null
+	private isHeader: boolean = false
+	private isEmpty: boolean | null = null
+
+	public getIsEmpty() {
+		if (this.isEmpty !== null) return this.isEmpty
+		this.isEmpty =
+			this.toArray()
+				.filter((x) => x !== null)
+				.join('') === ''
+
+		return Boolean(this.isEmpty)
+	}
+
+	public clone(): RowNode {
+		const clone = new RowNode({ attributesStr: this.getAttributesStr(), path: this.getPath() })
+		clone.setText(this.getText())
+
+		this.getChildren().forEach((child) => {
+			const childNew = new ColNode({ attributesStr: child.getAttributesStr(), path: child.getPath() })
+			const prevChild = clone.getChildren()[clone.getChildren().length - 1]
+			childNew.setText(child.getText())
+			childNew.setIndex(child.getIndex())
+			prevChild?.setNextSibling(childNew)
+			clone.addChild(childNew)
+		})
+
+		return clone
+	}
+
+	public setIsHeader(isHeader: boolean) {
+		this.isHeader = isHeader
+	}
+
+	public getIsHeader() {
+		return this.isHeader
+	}
 
 	public getChildren(): ColNode[] {
 		return super.getChildren() as ColNode[]
@@ -117,15 +229,66 @@ export class RowNode extends XMLNode {
 		return super.getPreviousSibling() as RowNode | null
 	}
 
+	/**
+	 * Uses the columns in this row to build a table. Each column is also an array since cols can touch
+	 * multiple other cells on the top and bottom due to colspan.
+	 *
+	 * ```ts
+	 * const returnExample = [
+	 *     [ [ColNode, ColNode], [ColNode], [ColNode, ColNode, ColNode] ]
+	 *     [ [ColNode], [ColNode], [ColNode] ], // this row
+	 *     [ [ColNode], [ColNode], [ColNode, ColNode] ],
+	 * ]
+	 * ```
+	 */
+	public getTableFromCols(): ColNode[][][] {
+		const tableRowCols: ColNode[][][] = []
+		const colIndexRanges = this.getChildren().map((col) => [col.getIndex(), col.getIndex() + col.getColSpan()])
+
+		for (const row of this.getParent().getChildren()) {
+			const rowCols: ColNode[][] = colIndexRanges.map(() => [])
+
+			for (const col of row.getChildren()) {
+				const [indexStart, indexEnd] = [col.getIndex(), col.getIndex() + col.getColSpan()]
+
+				for (let i = 0; i < colIndexRanges.length; i++) {
+					const [boundaryStart, boundaryEnd] = colIndexRanges[i]
+					if (indexEnd <= boundaryStart || indexStart >= boundaryEnd) continue
+					rowCols[i].push(col)
+				}
+			}
+
+			tableRowCols.push(rowCols)
+		}
+
+		return tableRowCols
+	}
+
+	public toTable() {
+		const table = this.getTableFromCols()
+		const tableTextArr: string[][] = []
+
+		for (const row of table) {
+			const colTextArr: string[] = []
+
+			for (const colArr of row) {
+				const colText = colArr.reduce((acc, col) => `${acc} ${col.getText()}`, '')
+				colTextArr.push(colText.trim())
+			}
+
+			tableTextArr.push(colTextArr)
+		}
+
+		return tableTextArr
+	}
+
 	public toArray() {
-		if (this.cols) return this.cols
 		const cols: (string | null)[] = []
 		this.getChildren().forEach((col) => {
 			cols.push(col.getText())
 			Array.from({ length: col.getColSpan() - 1 }).forEach(() => cols.push(null))
 		})
 
-		this.cols = cols
 		return cols
 	}
 }
@@ -142,8 +305,9 @@ export class ColNode extends XMLNode {
 	}
 
 	public getIndex() {
-		return this.index
+		return this.index ?? -1
 	}
+
 	public getParent(): RowNode {
 		return super.getParent() as RowNode
 	}
