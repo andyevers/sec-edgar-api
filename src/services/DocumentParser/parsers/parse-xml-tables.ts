@@ -4,13 +4,28 @@ import XMLParser from '../XMLParser'
 
 interface TableData {
 	title: string
+	section: string
+	text: string
 	rows: (string | number | null)[][]
 }
 
 export function parseXMLTables(params: XMLParams, xmlParser = new XMLParser()): TableData[] {
 	const { xml } = params
 	const documentNode = xmlParser.getDocumentNode({ xml })
-	const tables = documentNode.getChildren().filter((c) => c instanceof TableNode) as TableNode[]
+
+	const sectionIndexByTable = new Map<TableNode, number>()
+	const tables: TableNode[] = []
+
+	let sectionIndex = 0
+	documentNode.getChildren().forEach((child) => {
+		if (child instanceof HRNode) sectionIndex++
+		if (child instanceof TableNode) {
+			tables.push(child)
+			sectionIndexByTable.set(child, sectionIndex)
+		}
+	})
+
+	documentNode.getChildren().filter((c) => c instanceof TableNode) as TableNode[]
 
 	const filterSpace = (str: string) =>
 		str
@@ -38,7 +53,10 @@ export function parseXMLTables(params: XMLParams, xmlParser = new XMLParser()): 
 
 		if (text === '') return null
 
-		const colNum = text.replace(/,|\$|\(|\)|\%|\-/g, '').trim()
+		let colNum = text.replace(/,|\(|\)|\%/g, '').trim()
+		if (colNum === '-' || colNum === '$') return null
+
+		colNum = colNum.replace(/\-|\$/g, '')
 		if (!isNaN(Number(colNum))) {
 			if (text.includes('%')) return `${colNum}%`
 			return text.includes('(') || text.includes('-') ? Number(colNum) * -1 : Number(colNum)
@@ -62,12 +80,18 @@ export function parseXMLTables(params: XMLParams, xmlParser = new XMLParser()): 
 		}
 
 		// if no section text but in the same section as another table, use the previous table's title
+		const sectionTitleText = extractBold(sectionText)
 		const previousTitle = previousSibling instanceof TableNode ? previousSibling.getTitle() : null
-		table.setTitle(sectionText === '' ? previousTitle ?? '' : extractBold(sectionText))
+		table.setTitle(sectionTitleText === '' ? previousTitle ?? '' : sectionTitleText)
 
 		// clone the header of the previous table if they are in the same section and this table is missing a header
 		let headerRow = table.getHeaderRow()
-		if (!headerRow && previousSibling instanceof TableNode && previousSibling.getHeaderRow()) {
+		if (
+			!headerRow &&
+			previousSibling instanceof TableNode &&
+			previousSibling.getHeaderRow() &&
+			sectionText.trim() === ''
+		) {
 			headerRow = (previousSibling.getHeaderRow() as RowNode).clone()
 			table.prependChild(headerRow)
 			table.setHeaderRow(headerRow)
@@ -96,21 +120,38 @@ export function parseXMLTables(params: XMLParams, xmlParser = new XMLParser()): 
 		} else {
 			// if header row not found, use toArray which will create 1 column for each colspan
 			rows = table.toArray() as string[][]
+			const newTitle = (table.getTitle() ?? '') === '' ? 'NO HEADER' : `${table.getTitle()} -- NO HEADER`
+			table.setTitle(table.getTitle()?.endsWith('NO HEADER') ? table.getTitle() ?? newTitle : newTitle)
 		}
 
-		// filter out empty columns and parse values
+		// remove title rows within the table body
+		const isBold = (str: string) => str.startsWith('{{') && str.endsWith('}}')
+		rows = rows.filter((row) => !(isBold(row[0]) && row.every((col) => col === row[0])))
+
+		// get indexes where all columns are empty
 		const colIndexes = rows[0]?.map((_, i) => i) ?? []
 		const colIndexesEmpty = new Set(colIndexes.filter((i) => rows.every((r) => r[i] === '' || r[i] === null)))
 
+		// filter out empty columns and parse values
 		rows = rows
 			.map((row) => row.filter((_, i) => !colIndexesEmpty.has(i)).map((col) => parseValue(col)))
 			.filter((row) => !row.every((col) => col === '' || col === null) && row.length > 0) as any
 
-		if (rows.length > 0) {
-			result.push({
-				title: table.getTitle() ?? '',
-				rows: rows,
-			})
+		const tableData: TableData = {
+			title: table.getTitle() ?? '',
+			section: sectionIndexByTable.get(table)?.toString() ?? '',
+			text: sectionText,
+			rows: rows,
+		}
+
+		// update vertical tables
+		if (tableData.title.endsWith('NO HEADER')) {
+			const rowsFiltered = rows.map((r) => r.filter((c) => c !== null && c !== ''))
+			tableData.rows = rowsFiltered.every((r) => r.length === 2) ? rowsFiltered : rows
+		}
+
+		if (tableData.rows.length > 0) {
+			result.push(tableData)
 		}
 	})
 
