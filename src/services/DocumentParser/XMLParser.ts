@@ -1,5 +1,10 @@
-import SecEdgarApi from '../SecEdgarApi'
-import { ColNode, DocumentNode, HRNode, NonTableNode, RowNode, TableNode, XMLNode } from './XMLNode'
+import { ColNode } from './XMLNode/ColNode'
+import { DocumentNode } from './XMLNode/DocumentNode'
+import { HRNode } from './XMLNode/HRNode'
+import { NonTableNode } from './XMLNode/NonTableNode'
+import { RowNode } from './XMLNode/RowNode'
+import { TableNode } from './XMLNode/TableNode'
+import { XMLNode } from './XMLNode/XMLNode'
 
 interface OnCharacterData {
 	char: string
@@ -92,7 +97,7 @@ export default class XMLParser {
 
 					i++
 					j++
-					if (j > 1000) {
+					if (j > 1_000_000) {
 						throw new Error('too many iterations')
 					}
 				}

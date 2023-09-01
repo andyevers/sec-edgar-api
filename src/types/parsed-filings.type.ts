@@ -58,3 +58,12 @@ export interface Holder {
 	dispositivePowerShared: string | null
 	typeOfReportingPerson: string | null
 }
+
+export interface TableData {
+	title: string
+	textBefore: string | null
+	textAfter: string | null
+	hasHeader: boolean
+	sectionIndex: number
+	rows: (string | number | null)[][]
+}

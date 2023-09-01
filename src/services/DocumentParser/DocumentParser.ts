@@ -24,4 +24,8 @@ export default class DocumentParser {
 	public parseHolders(params: XMLParams) {
 		return this.parsersByName.parseForm13g(params, this.parser)
 	}
+
+	public parseEarningsTables(params: XMLParams) {
+		return this.parsersByName.parseForm10k(params, this.parser)
+	}
 }

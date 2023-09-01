@@ -8,6 +8,7 @@ import {
 	MultiCompanyFactFrame,
 	ReportRaw,
 	ReportTranslated,
+	TableData,
 } from '../../types'
 import { FilingListDetails, FilingListItemTranslated, SubmissionList } from '../../types/submission.type'
 import _cikBySymbol from '../../util/cik-by-symbol'
@@ -16,7 +17,7 @@ import DocumentParser from '../DocumentParser'
 import ReportParser from '../ReportParser'
 import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
-import RequestWrapper, { SendRequestParams } from './RequestWrapper'
+import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
 
 interface SecApiArgs {
@@ -156,15 +157,13 @@ export default class SecEdgarApi {
 		return filings
 	}
 
-	private getCreateRequestUrls(params: CreateRequestWrapperParams, forms: string[]) {
+	private getCreateRequestSubmissions(params: CreateRequestWrapperParams, forms: string[]) {
 		const { symbol, filings, cutoffDate = new Date('1970-01-01') } = params
 		const cik = this.getCikString(symbol)
 		const filingsArr = Array.isArray(filings) ? filings : this.mapFilingListDetails(cik, filings)
-		const filingsFiltered = filingsArr.filter(
+		return filingsArr.filter(
 			({ form, filingDate }) => forms.includes(form) && new Date(filingDate).getTime() > cutoffDate.getTime(),
 		)
-		const urls = filingsFiltered.filter(({ form }) => forms.includes(form)).map(({ url }) => url)
-		return urls
 	}
 
 	/**
@@ -191,6 +190,8 @@ export default class SecEdgarApi {
 		const { symbol, includeTranslated } = params
 		const cik = this.getCikString(symbol)
 		const submissions = await this.request<SubmissionList>(`${this.baseUrlEdgar}/submissions/CIK${cik}.json`)
+		submissions.cik = Number(submissions.cik)
+
 		if (!includeTranslated) return submissions
 		submissions.filings.recentTranslated = this.mapFilingListDetails(cik, submissions.filings.recent)
 
@@ -342,17 +343,19 @@ export default class SecEdgarApi {
 	 * const submissions = await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 	 * const requestWrapper = secEdgarApi.createRequestInsiderTransactions({ symbol: 'AAPL', filings: submissions.filings.recent })
 	 *
-	 * const transactions1 = await requestWrapper.requestNext() // array of transactions from most recent doc
-	 * const transactions2 = await requestWrapper.requestNext() // array of transactions from second most recent doc
+	 * const transactions1 = (await requestWrapper.requestNext()).result // array of transactions from most recent doc
+	 * const transactions2 = (await requestWrapper.requestNext()).result // array of transactions from second most recent doc
 	 * ```
 	 */
-	public createRequestInsiderTransactions(params: CreateRequestWrapperParams): RequestWrapper<InsiderTransaction> {
-		const urls = this.getCreateRequestUrls(params, ['4', '4/A', '5', '5/A'])
+	public createRequestInsiderTransactions(
+		params: CreateRequestWrapperParams,
+	): SubmissionRequestWrapper<InsiderTransaction[]> {
+		const submissions = this.getCreateRequestSubmissions(params, ['4', '4/A', '5', '5/A'])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseInsiderTransactions({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new RequestWrapper<InsiderTransaction>({ urls, options, sendRequest })
+		return new SubmissionRequestWrapper<InsiderTransaction[]>({ submissions, options, sendRequest })
 	}
 
 	/**
@@ -362,16 +365,36 @@ export default class SecEdgarApi {
 	 * const submissions = await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 	 * const requestWrapper = secEdgarApi.createRequestHolders({ symbol: 'AAPL', filings: submissions.filings.recent })
 	 *
-	 * const holders1 = await requestWrapper.requestNext() // array of holders from most recent doc
-	 * const holders2 = await requestWrapper.requestNext() // array of holders from second most recent doc
+	 * const holders1 = (await requestWrapper.requestNext()).result // array of holders from most recent doc
+	 * const holders2 = (await requestWrapper.requestNext()).result // array of holders from second most recent doc
 	 * ```
 	 */
-	public createRequestHolders(params: CreateRequestWrapperParams): RequestWrapper<Holder> {
-		const urls = this.getCreateRequestUrls(params, ['SC 13G', 'SC 13G/A'])
+	public createRequestHolders(params: CreateRequestWrapperParams): SubmissionRequestWrapper<Holder[]> {
+		const submissions = this.getCreateRequestSubmissions(params, ['SC 13G', 'SC 13G/A'])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseHolders({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new RequestWrapper<Holder>({ urls, options, sendRequest })
+		return new SubmissionRequestWrapper<Holder[]>({ submissions, options, sendRequest })
+	}
+
+	/**
+	 * Used for getting earnings report tables from submission files.
+	 *
+	 * ```ts
+	 * const submissions = await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
+	 * const requestWrapper = secEdgarApi.createRequesEarningsReports({ symbol: 'AAPL', filings: submissions.filings.recent })
+	 *
+	 * const tables1 = (await requestWrapper.requestNext()).result // array of tables from most recent doc
+	 * const tables2 = (await requestWrapper.requestNext()).result // array of tables from second most recent doc
+	 * ```
+	 */
+	public createRequestEarningsReports(params: CreateRequestWrapperParams): SubmissionRequestWrapper<TableData[]> {
+		const submissions = this.getCreateRequestSubmissions(params, ['10-Q', '10-Q/A', '10-K', '10-K/A'])
+		const options = { maxRequests: params.maxRequests }
+		const sendRequest = async (params: SendRequestParams) =>
+			this.documentParser.parseEarningsTables({ xml: await this.getDocumentXMLByUrl(params) })
+
+		return new SubmissionRequestWrapper<TableData[]>({ submissions, options, sendRequest })
 	}
 }

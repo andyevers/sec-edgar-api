@@ -1,4 +1,6 @@
-export interface RequestWrapperOptions {
+import { FilingListItemTranslated } from '../../types/submission.type'
+
+export interface SubmissionRequestWrapperOptions {
 	maxRequests?: number
 }
 
@@ -6,28 +8,33 @@ export interface SendRequestParams {
 	url: string
 }
 
-interface RequestWrapperArgs<T> {
-	urls: string[]
-	options?: RequestWrapperOptions
-	sendRequest: (params: SendRequestParams) => Promise<T | T[]>
+interface SubmissionRequestWrapperArgs<T> {
+	submissions: FilingListItemTranslated[]
+	options?: SubmissionRequestWrapperOptions
+	sendRequest: (params: SendRequestParams) => Promise<T>
 }
 
-export default class RequestWrapper<T> {
-	private results: T[]
-	private readonly options: RequestWrapperOptions
+interface SubmissionRequestWrapperResult<T> {
+	result: T | null
+	error: string | null
+	submission: FilingListItemTranslated
+}
 
-	private readonly urls: string[]
+export default class SubmissionRequestWrapper<T> {
+	private results: SubmissionRequestWrapperResult<T>[]
+	private readonly options: SubmissionRequestWrapperOptions
+	private readonly submissions: FilingListItemTranslated[]
 	private readonly errors: string[]
 
-	private readonly sendRequest: (params: SendRequestParams) => Promise<T | T[]>
+	private readonly sendRequest: (params: SendRequestParams) => Promise<T>
 
 	private requestCount: number
 	private isDone: boolean
 
-	constructor(args: RequestWrapperArgs<T>) {
-		const { urls, options = {}, sendRequest } = args
+	constructor(args: SubmissionRequestWrapperArgs<T>) {
+		const { submissions, options = {}, sendRequest } = args
 		this.options = options
-		this.urls = urls
+		this.submissions = submissions
 		this.results = []
 		this.errors = []
 		this.sendRequest = sendRequest
@@ -35,59 +42,68 @@ export default class RequestWrapper<T> {
 		this.isDone = options?.maxRequests === 0
 	}
 
-	public setOptions(options: RequestWrapperOptions) {
+	public setOptions(options: SubmissionRequestWrapperOptions) {
 		for (const key in options) {
-			this.options[key as keyof RequestWrapperOptions] = options[key as keyof RequestWrapperOptions]
+			this.options[key as keyof SubmissionRequestWrapperOptions] =
+				options[key as keyof SubmissionRequestWrapperOptions]
 		}
 	}
 
-	public async requestNext(): Promise<T[] | null> {
+	public async requestNext(): Promise<SubmissionRequestWrapperResult<T>> {
 		const { maxRequests = Infinity } = this.options
-		if (this.requestCount >= maxRequests || this.isDone) return null
+		const submission = this.submissions[this.requestCount]
+		const isComplete = this.requestCount >= maxRequests || this.isDone
+		if (isComplete || !submission) {
+			return {
+				submission,
+				error: isComplete ? 'max requests reached' : 'no submission found',
+				result: null,
+			}
+		}
 
-		const url = this.urls[this.requestCount]
+		const { url } = submission
 		this.requestCount++
 
-		if (this.requestCount >= this.urls.length || this.requestCount >= maxRequests) {
+		if (this.requestCount >= this.submissions.length || this.requestCount >= maxRequests) {
 			this.isDone = true
 		}
 
 		try {
 			const result = await this.sendRequest({ url })
-			const resultArr = Array.isArray(result) ? result : [result]
-			resultArr.forEach((result) => this.results.push(result))
-			return resultArr
+			const data = {
+				submission,
+				error: null,
+				result: result,
+			}
+
+			this.results.push(data)
+			return data
 		} catch (e) {
 			const error = e as Error
 			this.errors.push(error.message)
+			return {
+				submission,
+				error: error.message,
+				result: null,
+			}
 		}
-
-		return null
 	}
 
 	public skip(count = 1) {
 		this.requestCount += count
 	}
 
-	public async requestAll(): Promise<T[]> {
-		const promises: Promise<T[] | null>[] = []
+	public async requestAll(): Promise<SubmissionRequestWrapperResult<T>[]> {
+		const promises: Promise<SubmissionRequestWrapperResult<T>>[] = []
 
-		const maxRequests = this.options.maxRequests ?? this.urls.length
+		const maxRequests = this.options.maxRequests ?? this.submissions.length
 		for (let i = 0; i < maxRequests; i++) {
 			promises.push(this.requestNext())
 		}
 
-		const resultsArr = await Promise.all(promises)
-		const resultsFlat: T[] = []
-
-		resultsArr.forEach((results) => {
-			results?.forEach((result) => resultsFlat.push(result))
-		})
-
-		this.clearResults()
-		this.results = resultsFlat
-
-		return resultsFlat
+		const results = await Promise.all(promises)
+		results.forEach((result) => this.results.push(result))
+		return results
 	}
 
 	public clearResults() {
@@ -103,6 +119,10 @@ export default class RequestWrapper<T> {
 	}
 
 	public getSize() {
-		return this.urls.length
+		return this.submissions.length
+	}
+
+	public getSubmissions() {
+		return this.submissions
 	}
 }
