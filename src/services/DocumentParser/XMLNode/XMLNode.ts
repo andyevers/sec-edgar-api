@@ -67,19 +67,24 @@ export class XMLNode {
 		if (str === null) return null
 
 		const text = str
-			.replace(/\n|&#160;|&nbsp;/g, ' ')
+			.replace(/&#160;|&nbsp;|\n/g, ' ')
 			.replace(/&#174;/g, '')
 			.replace(/&#8211;|&#8212;|&#x2014;/g, '-')
-			.replace(/&#8217;|&#8220;|&#8221;/g, "'")
-			.replace(/\}\}\{\{/g, ' ')
-			.replace(/\{\{|\}\}/g, '')
+			.replace(/&#8217;|&#8220;|&#8221;|&rsquo;/g, "'")
+			.replace(/(?<=\{\{).*(?=\}\})/g, (match) => `{{${match.replace(/\{\{/g, '').replace(/\}\}/g, '')}}}`)
+			.replace(/\{\{+/g, '{{')
+			.replace(/\}\}+/g, '}}')
 			.replace(/\s+/, ' ')
 			.trim()
 
 		if (str.replace(/&#8211;|&#8212;|&#x2014;/g, '-') === '-') return '-'
 		if (text === '') return null
 
-		let colNum = text.replace(/,|\(|\)|\%/g, '').trim()
+		let colNum = text
+			.replace(/,|\(|\)|\%/g, '')
+			.replace(/\{\{/g, '')
+			.replace(/\}\}/g, '')
+			.trim()
 		if (colNum === '-' || colNum === '$') return null
 
 		colNum = colNum.replace(/\-|\$/g, '')

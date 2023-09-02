@@ -77,8 +77,8 @@ export class RowNode extends XMLNode {
 			for (const col of row.getChildren()) {
 				const [indexStart, indexEnd] = [col.getIndex(), col.getIndex() + col.getColSpan()]
 
-				// TODO: Instead of shifting cols here, just shift them in XMLParser when they are created
-				while (tableRowCols[rowIndex][colsShift].some((c) => c.getParent() !== col.getParent())) {
+				// 	// TODO: Instead of shifting cols here, just shift them in XMLParser when they are created
+				while (tableRowCols[rowIndex][colsShift]?.some((c) => c.getParent() !== col.getParent())) {
 					colsShift++
 				}
 
@@ -109,9 +109,6 @@ export class RowNode extends XMLNode {
 			for (const colArr of row) {
 				const colText = colArr.reduce((acc, col) => `${acc} ${col.getText()}`, '')
 
-				// if (colText === '2020 3,000,000') {
-				// 	console.log(colArr)
-				// }
 				// skip rows that are titles within the table body
 				const isTitleRow =
 					colArr.length === 1 &&
@@ -131,17 +128,12 @@ export class RowNode extends XMLNode {
 				const isMissingParenthesis =
 					nextCol?.getText().includes(')') && colText.includes('(') && !colText.includes(')')
 
-				let colTextTrimmed = isMissingParenthesis ? `${colText.trim()})` : colText.trim()
-				colTextTrimmed = isMissingPercentSign ? `${colText.trim()}%` : colText.trim()
-				colTextTrimmed = this.parseValue(colTextTrimmed) as string
-				colTextTrimmed =
-					typeof colTextTrimmed === 'string' ? colTextTrimmed.replace(/\s+/g, ' ') : colTextTrimmed
+				let colValue = isMissingParenthesis ? `${colText.trim()})` : colText.trim()
+				colValue = isMissingPercentSign ? `${colText.trim()}%` : colText.trim()
+				colValue = this.parseValue(colValue) as string
+				colValue = typeof colValue === 'string' ? colValue.replace(/\s+/g, ' ') : colValue
 
-				if (colTextTrimmed?.toString().includes('2020')) {
-					// console.log(colArr)
-					// console.log(colArr[0]?.getIndex())
-				}
-				colTextArr.push(colTextTrimmed)
+				colTextArr.push(colValue)
 			}
 
 			tableTextArr.push(colTextArr)
