@@ -228,6 +228,8 @@ export default class XMLParser {
 		const colsArr: XMLNode[] = []
 		const documentNode = new DocumentNode()
 
+		const countRowsToPushByCol = new Map<ColNode, number>()
+
 		let curNode: XMLNode | null = null
 		let prevRowCols: (ColNode | null)[] = []
 		let curRowCols: (ColNode | null)[] = []
@@ -235,13 +237,26 @@ export default class XMLParser {
 		let boldPath: string | null = null
 
 		const pushColToRow = (col: ColNode) => {
-			const colSpan = col.getColSpan()
+			// push cols from prev rows that span multiple rows
+			const prevColsSpanningRows = Array.from(countRowsToPushByCol.entries()).sort(
+				(a, b) => a[0].getIndex() - b[0].getIndex(),
+			)
+
+			prevColsSpanningRows.forEach(([colPrev, count]) => {
+				if (colPrev.getIndex() > curRowCols.length || curRowCols.includes(colPrev)) return
+				countRowsToPushByCol.set(colPrev, count - 1)
+				Array.from({ length: colPrev.getColSpan() }).forEach(() => curRowCols.push(colPrev))
+				if (count <= 0) countRowsToPushByCol.delete(colPrev)
+			})
+
 			const colIndex = curRowCols.length
 			col.setIndex(colIndex)
 
-			for (let i = 0; i < colSpan; i++) {
-				curRowCols.push(col)
-			}
+			const colSpan = col.getColSpan()
+			const rowSpan = col.getRowSpan()
+			if (rowSpan > 1) countRowsToPushByCol.set(col, rowSpan)
+
+			Array.from({ length: colSpan }).forEach(() => curRowCols.push(col))
 
 			const topSibling = prevRowCols[colIndex] ?? null
 			topSibling?.addBottomSibling(col)
@@ -329,6 +344,8 @@ export default class XMLParser {
 				}
 			},
 		})
+
+		documentNode.setText(xml)
 
 		return documentNode
 	}

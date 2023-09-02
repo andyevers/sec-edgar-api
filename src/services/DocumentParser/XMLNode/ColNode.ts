@@ -2,7 +2,6 @@ import { RowNode } from './RowNode'
 import { XMLNode } from './XMLNode'
 
 export class ColNode extends XMLNode {
-	private colSpan: number | null = null
 	private index: number | null = null
 
 	private topSiblings: ColNode[] = []
@@ -51,9 +50,10 @@ export class ColNode extends XMLNode {
 	}
 
 	public getColSpan() {
-		if (this.colSpan) return this.colSpan
-		const colSpan = Number(this.getAttributes().colspan ?? 1)
-		this.colSpan = colSpan
-		return colSpan
+		return Number(this.getAttributes().colspan ?? 1)
+	}
+
+	public getRowSpan() {
+		return Number(this.getAttributes().rowspan ?? 1)
 	}
 }
