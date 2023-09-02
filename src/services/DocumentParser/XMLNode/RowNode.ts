@@ -73,15 +73,22 @@ export class RowNode extends XMLNode {
 		for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
 			const row = rows[rowIndex]
 
+			let colsShift = 0
 			for (const col of row.getChildren()) {
 				const [indexStart, indexEnd] = [col.getIndex(), col.getIndex() + col.getColSpan()]
 
+				// TODO: Instead of shifting cols here, just shift them in XMLParser when they are created
+				while (tableRowCols[rowIndex][colsShift].some((c) => c.getParent() !== col.getParent())) {
+					colsShift++
+				}
+
+				// tableRowCols
 				for (let i = 0; i < colIndexRanges.length; i++) {
 					const [boundaryStart, boundaryEnd] = colIndexRanges[i]
 					if (indexEnd <= boundaryStart || indexStart >= boundaryEnd) continue
 
 					for (let j = rowIndex; j < rowIndex + col.getRowSpan(); j++) {
-						tableRowCols[j][i].push(col)
+						tableRowCols[j]?.[i + colsShift]?.push(col)
 					}
 				}
 			}
@@ -102,6 +109,9 @@ export class RowNode extends XMLNode {
 			for (const colArr of row) {
 				const colText = colArr.reduce((acc, col) => `${acc} ${col.getText()}`, '')
 
+				// if (colText === '2020 3,000,000') {
+				// 	console.log(colArr)
+				// }
 				// skip rows that are titles within the table body
 				const isTitleRow =
 					colArr.length === 1 &&
@@ -127,6 +137,10 @@ export class RowNode extends XMLNode {
 				colTextTrimmed =
 					typeof colTextTrimmed === 'string' ? colTextTrimmed.replace(/\s+/g, ' ') : colTextTrimmed
 
+				if (colTextTrimmed?.toString().includes('2020')) {
+					// console.log(colArr)
+					// console.log(colArr[0]?.getIndex())
+				}
 				colTextArr.push(colTextTrimmed)
 			}
 

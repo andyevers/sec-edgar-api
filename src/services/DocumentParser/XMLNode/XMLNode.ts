@@ -1,4 +1,4 @@
-interface XMLNodeArgs {
+export interface XMLNodeArgs {
 	path?: string
 	attributesStr?: string
 }
