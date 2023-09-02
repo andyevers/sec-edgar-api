@@ -66,11 +66,12 @@ export class RowNode extends XMLNode {
 	 * ```
 	 */
 	public getTableFromCols(): ColNode[][][] {
-		const tableRowCols: ColNode[][][] = []
 		const colIndexRanges = this.getChildren().map((col) => [col.getIndex(), col.getIndex() + col.getColSpan()])
+		const rows = this.getParent().getChildren()
+		const tableRowCols: ColNode[][][] = rows.map(() => colIndexRanges.map(() => []))
 
-		for (const row of this.getParent().getChildren()) {
-			const rowCols: ColNode[][] = colIndexRanges.map(() => [])
+		for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+			const row = rows[rowIndex]
 
 			for (const col of row.getChildren()) {
 				const [indexStart, indexEnd] = [col.getIndex(), col.getIndex() + col.getColSpan()]
@@ -78,11 +79,12 @@ export class RowNode extends XMLNode {
 				for (let i = 0; i < colIndexRanges.length; i++) {
 					const [boundaryStart, boundaryEnd] = colIndexRanges[i]
 					if (indexEnd <= boundaryStart || indexStart >= boundaryEnd) continue
-					rowCols[i].push(col)
+
+					for (let j = rowIndex; j < rowIndex + col.getRowSpan(); j++) {
+						tableRowCols[j][i].push(col)
+					}
 				}
 			}
-
-			tableRowCols.push(rowCols)
 		}
 
 		return tableRowCols
