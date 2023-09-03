@@ -1,4 +1,4 @@
-import { InsiderTransaction, TransactionCode, XMLParams } from '../../../types'
+import { Form4Data, InsiderTransaction, TransactionCode, XMLParams } from '../../../types'
 import XMLParser from '../XMLParser'
 
 /**
@@ -6,7 +6,7 @@ import XMLParser from '../XMLParser'
  *
  * example at https://www.sec.gov/Archives/edgar/data/320193/000032019323000079/xslF345X05/wk-form4_1691533817.xml
  */
-export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): InsiderTransaction[] {
+export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form4Data {
 	const { xml } = params
 
 	const textMap = xmlParser.getTableTextMap({ xml, parentPath: 'html.body' })
@@ -226,5 +226,5 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Insi
 		transactions.push(transaction)
 	}
 
-	return transactions
+	return { transactions }
 }

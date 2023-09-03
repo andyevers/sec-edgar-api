@@ -77,7 +77,7 @@ describe('SecEdgarApi', () => {
 			.spyOn(secEdgarApi, 'getDocumentXMLByUrl')
 			.mockReturnValue(new Promise((resolve) => resolve(form13gXML)))
 
-		const request = secEdgarApi.createRequestHolders({ symbol: 'AAPL', filings })
+		const request = secEdgarApi.createRequestInstitutionalHolders({ symbol: 'AAPL', filings })
 		const [response] = await request.requestAll()
 		const { result } = response
 
@@ -88,7 +88,7 @@ describe('SecEdgarApi', () => {
 		expect(fnGetDocumentXML).toHaveBeenCalledWith({ url: request.getSubmissions()[0].url })
 
 		// result data tested in DocumentParser.test.ts
-		expect(result?.length).toBe(7)
+		expect(result?.holders.length).toBe(7)
 	})
 
 	test('createRequestInsiderTransactions', async () => {

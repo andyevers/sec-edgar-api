@@ -3,12 +3,13 @@ import { TableData } from '../src/types'
 import { form10qXML } from './__fixtures__/form-10q'
 import { form13gXML } from './__fixtures__/form-13g'
 import { form4XML } from './__fixtures__/form-4'
+import { formDef14aXML } from './__fixtures__/form-def14a'
 
 describe('DocumentParser', () => {
 	const documentParser = new DocumentParser()
 
-	test('parseInsiderTransactions', () => {
-		const result = documentParser.parseInsiderTransactions({ xml: form4XML })
+	test('parseForm4', () => {
+		const result = documentParser.parseForm4({ xml: form4XML }).transactions
 
 		expect(result.length).toBe(4)
 		expect(result[1].filerName).toBe("O'BRIEN DEIRDRE")
@@ -67,8 +68,8 @@ describe('DocumentParser', () => {
 		})
 	})
 
-	test('parseHolders', () => {
-		const result = documentParser.parseHolders({ xml: form13gXML })
+	test('parseForm13g', () => {
+		const result = documentParser.parseForm13g({ xml: form13gXML }).holders
 
 		expect(result.length).toBe(7)
 		expect(result[0].name).toBe('Warren E. Buffett')
@@ -82,8 +83,8 @@ describe('DocumentParser', () => {
 		expect(result[0].typeOfReportingPerson).toBe('IN')
 	})
 
-	test('parseEarningsTables', () => {
-		const result = documentParser.parseEarningsTables({ xml: form10qXML })
+	test('parseForm10k', () => {
+		const result = documentParser.parseForm10k({ xml: form10qXML }).tables
 
 		const statementOperations = result.find((table) => table.title.includes('OPERATIONS')) as TableData
 		const statementBalance = result.find((table) => table.title.includes('BALANCE SHEETS')) as TableData
@@ -190,5 +191,51 @@ describe('DocumentParser', () => {
 			["Total shareholders' equity", 60274, 50672],
 			["Total liabilities and shareholders' equity", 335038, 352755],
 		])
+	})
+
+	test('parseFormDef14a', () => {
+		const { executiveCompensation, holders } = documentParser.parseFormDef14a({ xml: formDef14aXML })
+
+		expect(executiveCompensation[0]).toEqual({
+			name: 'Tim Cook',
+			position: 'Chief Executive Officer',
+			year: 2022,
+			salaryDollars: 3000000,
+			bonusDollars: null,
+			stockAwardDollars: 82994164,
+			nonEquityDollars: 12000000,
+			otherDollars: 1425933,
+			totalDollars: 99420097,
+		})
+
+		expect(executiveCompensation[executiveCompensation.length - 1]).toEqual({
+			name: 'Jeff Williams',
+			position: 'Chief Operating Officer',
+			year: 2020,
+			salaryDollars: 1000000,
+			bonusDollars: null,
+			stockAwardDollars: 21657687,
+			nonEquityDollars: 3577000,
+			otherDollars: 17137,
+			totalDollars: 26251824,
+		})
+
+		expect(executiveCompensation.length).toBe(15)
+
+		expect(holders[0]).toEqual({
+			name: 'The Vanguard',
+			position: null,
+			shares: 1261261357,
+			percentOfClass: '7.96%',
+		})
+
+		expect(holders).toContainEqual({
+			name: 'Jeff Williams',
+			position: null,
+			shares: 677392,
+			percentOfClass: '*',
+		})
+
+		expect(holders).toHaveLength(17)
 	})
 })

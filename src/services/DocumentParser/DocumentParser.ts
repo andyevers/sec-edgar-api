@@ -1,4 +1,4 @@
-import { InsiderTransaction, XMLParams } from '../../types'
+import { XMLParams } from '../../types'
 import XMLParser from './XMLParser'
 import parsers from './parsers'
 
@@ -17,15 +17,19 @@ export default class DocumentParser {
 		this.parsersByName = parsersByName
 	}
 
-	public parseInsiderTransactions(params: XMLParams): InsiderTransaction[] {
+	public parseForm4(params: XMLParams) {
 		return this.parsersByName.parseForm4(params, this.parser)
 	}
 
-	public parseHolders(params: XMLParams) {
+	public parseForm13g(params: XMLParams) {
 		return this.parsersByName.parseForm13g(params, this.parser)
 	}
 
-	public parseEarningsTables(params: XMLParams) {
+	public parseForm10k(params: XMLParams) {
 		return this.parsersByName.parseForm10k(params, this.parser)
+	}
+
+	public parseFormDef14a(params: XMLParams) {
+		return this.parsersByName.parseFormDef14a(params, this.parser)
 	}
 }

@@ -88,9 +88,15 @@ export class XMLNode {
 		if (colNum === '-' || colNum === '$') return null
 
 		colNum = colNum.replace(/\-|\$/g, '')
+
+		const hasNumBeforeParenthesis = Boolean(/\d+\s*(?=\()/.test(text))
+		colNum = hasNumBeforeParenthesis ? colNum.split(' ')[0]?.trim() : colNum
+
 		if (!isNaN(Number(colNum))) {
 			if (text.includes('%')) return text.replace(/[^a-zA-Z\d\s:]/g, '') === '' ? null : text
-			return text.includes('(') || text.includes('-') ? Number(colNum) * -1 : Number(colNum)
+			return (text.trim().includes('(') && !hasNumBeforeParenthesis) || text.includes('-')
+				? Number(colNum) * -1
+				: Number(colNum)
 		}
 
 		return text

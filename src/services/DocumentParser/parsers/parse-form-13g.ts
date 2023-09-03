@@ -1,20 +1,20 @@
-import { Holder, XMLParams } from '../../../types'
+import { Form13GData, InstitutionalHolder, XMLParams } from '../../../types'
 import XMLParser from '../XMLParser'
 
 /**
- * Form SC 13G - Holders
+ * Form SC 13G - Institutional Holders
  *
  * example at https://www.sec.gov/Archives/edgar/data/320193/000119312523038262/d382361dsc13ga.htm
  */
-export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Holder[] {
+export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Form13GData {
 	const { xml } = params
 
 	const textMap = xmlParser.getTableTextMap({ xml })
 
-	const holders: Holder[] = []
+	const holders: InstitutionalHolder[] = []
 
-	const getKey = (text: string): keyof Holder | null => {
-		const keyMap: Record<string, keyof Holder> = {
+	const getKey = (text: string): keyof InstitutionalHolder | null => {
+		const keyMap: Record<string, keyof InstitutionalHolder> = {
 			'name of reporting': 'name',
 			'names of reporting': 'name',
 			'citizenship or place': 'origin',
@@ -87,5 +87,5 @@ export function parseForm13g(params: XMLParams, xmlParser = new XMLParser()): Ho
 		holders.pop()
 	}
 
-	return holders
+	return { holders }
 }

@@ -9,6 +9,8 @@ Some main data points available include:
 -   Insider Transactions
 -   Institutional Holders
 -   Filing History
+-   Directors & Executives
+-   Executive Compensation
 
 ## Installation
 
