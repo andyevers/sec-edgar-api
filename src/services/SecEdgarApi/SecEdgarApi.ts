@@ -386,8 +386,8 @@ export default class SecEdgarApi {
 	 * const submissions = await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 	 * const requestWrapper = secEdgarApi.createRequesEarningsReports({ symbol: 'AAPL', filings: submissions.filings.recent })
 	 *
-	 * const tables1 = (await requestWrapper.requestNext()).result // array of tables from most recent doc
-	 * const tables2 = (await requestWrapper.requestNext()).result // array of tables from second most recent doc
+	 * const tables1 = (await requestWrapper.requestNext()).result.tables // array of tables from most recent doc
+	 * const tables2 = (await requestWrapper.requestNext()).result.tables // array of tables from second most recent doc
 	 * ```
 	 */
 	public createRequestEarningsReports(params: CreateRequestWrapperParams): SubmissionRequestWrapper<Form10KData> {
@@ -400,14 +400,13 @@ export default class SecEdgarApi {
 	}
 
 	/**
-	 * Used for getting earnings report tables from submission files.
+	 * Proxy statement includes list of holders, executiveCompensation, and other tables. returns FormDef14aData
 	 *
 	 * ```ts
 	 * const submissions = await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 	 * const requestWrapper = secEdgarApi.createRequesProxyStatement({ symbol: 'AAPL', filings: submissions.filings.recent })
 	 *
-	 * const tables1 = (await requestWrapper.requestNext()).result // array of tables from most recent doc
-	 * const tables2 = (await requestWrapper.requestNext()).result // array of tables from second most recent doc
+	 * const { holders, executiveCompensation } = (await requestWrapper.requestNext()).result
 	 * ```
 	 */
 	public createRequestProxyStatement(params: CreateRequestWrapperParams): SubmissionRequestWrapper<FormDef14aData> {

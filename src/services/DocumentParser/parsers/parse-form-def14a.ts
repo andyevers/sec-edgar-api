@@ -130,7 +130,5 @@ export function parseFormDef14a(params: XMLParams, xmlParser = new XMLParser()):
 		}
 	}
 
-	// look for "director since" to get list of directors
-
 	return { executiveCompensation: compensationArr, holders: holderArr }
 }
