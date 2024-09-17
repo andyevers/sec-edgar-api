@@ -24,7 +24,7 @@ export function resolveCashFlowOperating(report: ReportWrapper): void {
 }
 
 function getCashFlowOperating(report: ReportWrapper) {
-	const reportPrev = report.getReportOffset(-1, report.isTTM ? 'ANNUAL' : 'QUARTERLY')
+	const reportPrev = report.getReportOffset(-1, report.fiscalPeriod === 'FY' ? 'ANNUAL' : 'QUARTERLY')
 
 	if (!reportPrev) return null
 

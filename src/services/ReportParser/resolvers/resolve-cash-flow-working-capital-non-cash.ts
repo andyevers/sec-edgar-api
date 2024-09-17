@@ -5,7 +5,7 @@ export function resolveCashFlowWorkingCapitalNonCash(report: ReportWrapper) {
 	if (report.cashFlowWorkingCapitalNonCash !== null) return
 
 	// the previous report is used to calculate the change in working capital in resolveCashFlowOperating
-	const reportWrapperPrev = report.getReportOffset(-1, report.isTTM ? 'ANNUAL' : 'QUARTERLY')
+	const reportWrapperPrev = report.getReportOffset(-1, report.fiscalPeriod === 'FY' ? 'ANNUAL' : 'QUARTERLY')
 	const { FY, Q1, Q2, Q3, Q4 } = report.getReportsFiscalYearByPeriod()
 
 	for (const report of [FY, Q1, Q2, Q3, Q4, reportWrapperPrev]) {

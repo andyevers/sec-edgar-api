@@ -9,10 +9,38 @@ export function resolveQ4FiscalYearMatchingProperties(reportWrapper: ReportWrapp
 
 	if (!FY || !Q1 || !Q2 || !Q3 || !Q4) return
 
-	// these properties should be the same for Q4 and FY
-	matchProperty('assetNonCurrentPPEGross', Q4, FY)
-	matchProperty('assetNonCurrentPPENet', Q4, FY)
-	matchProperty('expenseDepreciationAccumulated', Q4, FY)
+	const matchingProperties: (keyof ReportTranslated)[] = [
+		'assetCurrent',
+		'assetCurrentAccountsReceivable',
+		'assetCurrentCashEquivalents',
+		'assetCurrentInventory',
+		'assetCurrentInvestments',
+		'assetNonCurrent',
+		'assetNonCurrentGoodwill',
+		'assetNonCurrentIntangibleLessGoodwill',
+		'assetNonCurrentInvestments',
+		'assetNonCurrentPPEGross',
+		'assetNonCurrentPPENet',
+		'assetTotal',
+		'liabilityCurrent',
+		'liabilityCurrentAccountsPayable',
+		'liabilityCurrentDebt',
+		'liabilityNonCurrent',
+		'liabilityNonCurrentDebt',
+		'liabilityTotal',
+		'equityRetainedEarnings',
+		'equityStockPreferred',
+		'equityTotal',
+		'dateFiled',
+		'dateReport',
+		'sharesOutstanding',
+		'sharesOutstandingDiluted',
+		'splitRatio',
+	]
+
+	for (const property of matchingProperties) {
+		matchProperty(property, Q4, FY)
+	}
 }
 
 function matchProperty(propertyName: keyof ReportTranslated, reportA: ReportTranslated, reportB: ReportTranslated) {

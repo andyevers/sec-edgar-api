@@ -14,25 +14,39 @@ export function resolveFiscalYearCumulativeProperties(report: ReportWrapper): vo
 	matchProperty('assetNonCurrentPPENet', Q4, FY)
 	matchProperty('expenseDepreciationAccumulated', Q4, FY)
 
-	// keys that should not add up to the FY value
-	const keysToSkip = new Set<keyof ReportTranslated>([
-		'expenseDepreciationAccumulated',
-		'assetNonCurrentPPEGross',
-		'assetNonCurrentPPENet',
-		'dateFiled',
-		'dateReport',
-		'fiscalPeriod',
-		'fiscalYear',
-		'isTTM',
-		'form',
-		'sharesOutstanding',
-		'sharesOutstandingDiluted',
+	const keysToInclude = new Set<keyof ReportTranslated>([
+		'cashFlowCapex',
+		'cashFlowDeferredTax',
+		'cashFlowDividendsPaid',
+		'cashFlowDividendsPaidPreferred',
+		'cashFlowFree',
+		'cashFlowOperating',
+		'cashFlowWorkingCapitalNonCash',
+		'assetNonCurrentIntangibleLessGoodwill',
+		'expenseDepreciation',
+		'expenseInterest',
+		'expenseNonCashOther',
+		'expenseOperating',
+		'expenseResearchDevelopment',
+		'expenseStockCompensation',
+		'expenseTax',
+		'expenseTotal',
+		'ebit',
+		'ebitda',
+		'eps',
+		'epsDiluted',
+		'incomeNet',
+		'incomeOperating',
+		'profitGross',
+		'revenueCost',
+		'revenueOperating',
+		'revenueTotal',
 	])
 
 	const reportKeys = Object.keys(Q1) as (keyof ReportTranslated)[]
 	const keysToResolve = reportKeys.filter((key) => {
 		const reportsWithVal = [FY, Q1, Q2, Q3, Q4].filter((report) => {
-			return typeof report[key] === 'number' && !keysToSkip.has(key)
+			return typeof report[key] === 'number' && keysToInclude.has(key)
 		})
 
 		// we want to get the keys that are in 4 of the 5 reports
@@ -51,7 +65,8 @@ export function resolveFiscalYearCumulativeProperties(report: ReportWrapper): vo
 		} else {
 			for (const rep of [Q1, Q2, Q3, Q4]) {
 				if (rep && typeof rep[key] !== 'number') {
-					;(rep as unknown as Record<string, number>)[key] = valueFY - sumQuarters
+					;(rep as unknown as Record<string, number>)[key] =
+						Math.round((valueFY - sumQuarters) * 10_000) / 10_000
 					break
 				}
 			}

@@ -5,9 +5,10 @@ import { getRoundToPlaces, splitValueBetweenReports } from './helpers'
  * This only an estimate. splits remaining capex between quarters if FY has capex, or adds quarterly capex if Quarters have it
  */
 export function resolveCashFlowCapex(report: ReportWrapper): void {
-	if (report.fiscalYear !== 2022 || report.cashFlowCapex !== null) return
+	if (report.cashFlowCapex !== null) return
 
-	const reportPrev = report.getReportOffset(-1, report.isTTM ? 'ANNUAL' : 'QUARTERLY')
+	const isFY = report.fiscalPeriod === 'FY'
+	const reportPrev = report.getReportOffset(-1, isFY ? 'ANNUAL' : 'QUARTERLY')
 	const { FY, Q1, Q2, Q3, Q4 } = report.getReportsFiscalYearByPeriod()
 
 	if (FY === null) {
@@ -18,7 +19,7 @@ export function resolveCashFlowCapex(report: ReportWrapper): void {
 	const sumQuarters = [Q1, Q2, Q3, Q4].reduce((sum, rep) => sum + (rep?.cashFlowCapex ?? 0), 0)
 	const reportsQuarterlyWithoutCapex = [Q1, Q2, Q3, Q4].filter((rep) => rep && rep.cashFlowCapex === null)
 
-	if (report.isTTM) {
+	if (isFY) {
 		if (reportsQuarterlyWithoutCapex.length === 0) report.cashFlowCapex = sumQuarters
 		return
 	}

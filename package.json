@@ -1,11 +1,11 @@
 {
     "name": "sec-edgar-api",
-    "version": "0.1.1",
+    "version": "0.2.1",
     "description": "Fetch and parse SEC earnings reports and other filings. Useful for financial analysis.",
     "main": "build/index.js",
     "author": "Andrew Evers (https://github.com/andyevers)",
     "homepage": "https://github.com/andyevers/sec-edgar-api#readme",
-    "license": "ISC",
+    "license": "MIT",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/andyevers/sec-edgar-api.git"

@@ -16,7 +16,7 @@ import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
 import DocumentParser from '../DocumentParser'
 import ReportParser from '../ReportParser'
-import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
+// import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
 import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
@@ -273,7 +273,7 @@ export default class SecEdgarApi {
 	 * Parses reports from company facts. Calculates missing properties and uses a single interface
 	 * for all reports.
 	 */
-	public async getReportsRaw(params: GetSymbolParams & ParseReportsOptions): Promise<ReportRaw[]> {
+	public async getReportsRaw(params: GetSymbolParams): Promise<ReportRaw[]> {
 		const facts = await this.getFacts(params)
 		return this.reportParser.parseReportsRaw(facts)
 	}

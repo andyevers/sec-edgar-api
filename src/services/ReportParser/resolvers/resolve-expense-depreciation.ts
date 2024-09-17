@@ -101,7 +101,7 @@ function getDepreciationPercentOfPPE(report: ReportWrapper) {
 
 	// if checking depreciation using an annual report, we need to get the sum of the quarters
 	let ppeDenominator = assetNonCurrentPPEGrossTTMOrPrev
-	if (reportTTMOrPrev.isTTM && !report.isTTM) {
+	if (reportTTMOrPrev.fiscalPeriod === 'FY' && report.fiscalPeriod !== 'FY') {
 		const { Q1, Q2, Q3, Q4 } = reportTTMOrPrev.getReportsFiscalYearByPeriod()
 		ppeDenominator = 0
 		for (const rep of [Q1, Q2, Q3, Q4]) {

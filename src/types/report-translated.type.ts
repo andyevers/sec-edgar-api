@@ -1,12 +1,14 @@
 import { FiscalPeriod } from './report-raw.type'
 
 export interface ReportTranslated {
+	cik: number
+	url: string | null
 	dateReport: string
 	dateFiled: string
 	fiscalPeriod: FiscalPeriod
 	fiscalYear: number
-	form: string
-	isTTM: boolean
+	splitDate: string | null
+	splitRatio: number | null
 
 	assetTotal: number | null
 	assetCurrent: number | null

@@ -12,6 +12,7 @@ import { resolveFiscalYearCumulativeProperties } from './resolve-fiscal-year-cum
 import { resolveLiabilityCurrent } from './resolve-liability-current'
 import { resolveQ4FiscalYearMatchingProperties } from './resolve-q4-fiscal-year-matching-properties'
 import { resolveRevenueTotal } from './resolve-revenue-total'
+import { resolveSplitRatio } from './resolve-split-ratio'
 
 const resolvers = {
 	resolveAssetNonCurrentPPEGross,
@@ -28,6 +29,7 @@ const resolvers = {
 	resolveLiabilityCurrent,
 	resolveQ4FiscalYearMatchingProperties,
 	resolveCashFlowWorkingCapitalNonCash,
+	resolveSplitRatio,
 }
 
 export default resolvers

@@ -2,16 +2,15 @@
  * Contains all keys matched from the report, along with the added keys dateEnd, dateFiled, fiscalPeriod, fiscalYear.
  */
 export type ReportRaw = {
-	[key: string]: string | number | boolean
+	[key: string]: string | number | boolean | null
+	cik: number
+	url: string | null
 	dateReport: string
 	dateFiled: string
-	form: string
-	isTTM: boolean
-	frame: string
-	taxonomy: string
-	reportType: ReportType
 	fiscalPeriod: FiscalPeriod
 	fiscalYear: number
+	splitRatio: number | null
+	splitDate: string | null
 }
 
 /**

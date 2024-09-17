@@ -14,15 +14,14 @@ export default class ReportWrapper extends ReportTranslatedProxy implements Repo
 		this.report = report
 		this.reportMap = reportMap ?? new Map()
 		this.reportRaw = reportRaw ?? {
+			cik: report.cik,
+			url: report.url,
 			dateFiled: report.dateFiled,
 			dateReport: report.dateReport,
-			form: report.form,
-			isTTM: report.isTTM,
-			frame: '',
-			taxonomy: '',
-			reportType: report.isTTM ? 'ANNUAL' : 'QUARTERLY',
 			fiscalPeriod: report.fiscalPeriod ?? '',
 			fiscalYear: report.fiscalYear,
+			splitRatio: null,
+			splitDate: null,
 		}
 	}
 

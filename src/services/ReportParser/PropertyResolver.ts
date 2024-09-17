@@ -28,6 +28,7 @@ export default class PropertyResolver {
 			this.resolvers.resolveCashFlowOperating(report)
 			this.resolvers.resolveCashFlowCapex(report)
 			this.resolvers.resolveCashFlowFree(report)
+			this.resolvers.resolveSplitRatio(report)
 		})
 	}
 }

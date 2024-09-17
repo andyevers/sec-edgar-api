@@ -24,12 +24,14 @@ Reports are all returned as a uniform interface:
 
 ```TS
 interface ReportTranslated {
+	cik: number
+	url: string | null
 	dateReport: string
 	dateFiled: string
 	fiscalPeriod: FiscalPeriod
 	fiscalYear: number
-	form: string
-	isTTM: boolean
+	splitDate: string | null
+	splitRatio: number | null
 
 	assetTotal: number | null
 	assetCurrent: number | null
@@ -113,8 +115,6 @@ const reports = await secEdgarApi.getReports({ symbol: 'AAPL' })
 ```
 
 ## Resolvers
-
-**WARNING** Still in testing. Values may not be accurate for all companies since the properties provided in the reports differ.
 
 The main problem with the edgar API is that the property names and data provided are not uniform. You have to deal with companies omitting important data
 in some filings, or using different property keys for the same data point.

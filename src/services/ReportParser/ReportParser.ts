@@ -1,8 +1,8 @@
 import { CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
 import _keyTranslator from '../../util/key-translations'
-import { IterateFactsCallbackData } from './FactIterator'
+import ReportRawResolvable from '../ReportBuilder/ReportRawResolvable'
 import PropertyResolver from './PropertyResolver'
-import ReportRawParser, { ParseReportsOptions } from './ReportRawParser'
+import ReportRawParser from './ReportRawParser'
 import ReportWrapper from './ReportWrapper'
 
 interface ReportParserArgs {
@@ -43,14 +43,8 @@ export default class ReportParser {
 	 *
 	 * @param companyFactListData This is the json file contents of CIK[number].json file from the SEC website. You can find these using their API or by downloading the companyfacts.zip file: https://www.sec.gov/edgar/sec-api-documentation
 	 */
-	public parseReports(
-		companyFactListData: Pick<CompanyFactListData, 'facts'>,
-		usePropertyResolver = true,
-	): ReportWrapper[] {
-		const reportsRaw = this.reportRawParser.parseReports(companyFactListData, {
-			reportsToInclude: ['ANNUAL', 'QUARTERLY'],
-		})
-
+	public parseReports(companyFactListData: CompanyFactListData, usePropertyResolver = true): ReportWrapper[] {
+		const reportsRaw = this.reportRawParser.parseReports(companyFactListData)
 		return this.parseReportsFromRaw(reportsRaw, usePropertyResolver)
 	}
 
@@ -60,9 +54,7 @@ export default class ReportParser {
 	public parseReportsFromRaw(reportsRaw: ReportRaw[], usePropertyResolver = true): ReportWrapper[] {
 		const reportByYearQuarter = new Map<string, ReportWrapper>()
 
-		const reportsRawFiltered = reportsRaw.filter((reportRaw) => {
-			return reportRaw.reportType === 'ANNUAL' || reportRaw.reportType === 'QUARTERLY'
-		})
+		const reportsRawFiltered = reportsRaw
 
 		this.translateReportsRaw(reportsRawFiltered, (report, reportRaw) => {
 			const { fiscalPeriod, fiscalYear } = report
@@ -85,47 +77,26 @@ export default class ReportParser {
 	 *
 	 * @see https://www.sec.gov/edgar/sec-api-documentation
 	 */
-	public parseReportsRaw(
-		companyFactListData: Pick<CompanyFactListData, 'facts'>,
-		options?: ParseReportsOptions,
-	): ReportRaw[] {
-		return this.reportRawParser.parseReports(companyFactListData, options)
+	public parseReportsRaw(companyFactListData: CompanyFactListData): ReportRaw[] {
+		return this.reportRawParser.parseReports(companyFactListData)
 	}
 
 	/**
 	 * parseReportsRaw but removes meta data from the report
 	 */
-	public parseReportsRawNoMeta(
-		companyFactListData: Pick<CompanyFactListData, 'facts'>,
-		options?: ParseReportsOptions,
-	): Record<string, number>[] {
-		const reportsRaw = this.parseReportsRaw(companyFactListData, options)
+	public parseReportsRawNoMeta(companyFactListData: CompanyFactListData): Record<string, number>[] {
+		const reportsRaw = this.parseReportsRaw(companyFactListData)
 		reportsRaw.forEach((reportRaw) => {
 			const report = reportRaw as any
 			delete report.dateFiled
 			delete report.dateReport
 			delete report.fiscalPeriod
 			delete report.fiscalYear
-			delete report.form
-			delete report.frame
-			delete report.isTTM
-			delete report.reportType
-			delete report.taxonomy
+			delete report.splitRatio
+			delete report.splitDate
 		})
 
 		return reportsRaw as unknown as Record<string, number>[]
-	}
-
-	/**
-	 * Avoids deep nesting logic while iteratating through company facts
-	 *
-	 * @param callback called on each company fact.
-	 */
-	public iterateCompanyFacts(
-		companyFactListData: Pick<CompanyFactListData, 'facts'>,
-		callback: (data: IterateFactsCallbackData) => void,
-	) {
-		this.reportRawParser.iterateCompanyFacts(companyFactListData, callback)
 	}
 
 	/**
@@ -143,23 +114,25 @@ export default class ReportParser {
 		const keyTranslations = (keyTranslator ?? this.keyTranslator) as Record<string, string[]>
 		const reports: Record<string, string | number | null>[] = []
 
-		reportsRaw.forEach((reportRaw) => {
+		reportsRaw.forEach((report) => {
 			const reportNew: Record<string, string | number | null | boolean> = {}
+
+			const reportRaw = new ReportRawResolvable(report)
 
 			// iterate translation keys, ensuring same order and priority
 			for (const key in keyTranslations) {
 				const keysRaw = keyTranslations[key]
 				reportNew[key] = null
-
 				for (const keyRaw of keysRaw) {
-					if (reportRaw[keyRaw] === undefined) continue
-					reportNew[key] = reportRaw[keyRaw]
+					const value = reportRaw.get(keyRaw)
+					if (value === undefined) continue
+					reportNew[key] = value
 					break
 				}
 			}
 
 			const reportFiltered = callback
-				? callback(reportNew as Parameters<C>[0], reportRaw, keyTranslations as Parameters<C>[2])
+				? callback(reportNew as Parameters<C>[0], reportRaw.report, keyTranslations as Parameters<C>[2])
 				: reportNew
 
 			reports.push(reportFiltered)

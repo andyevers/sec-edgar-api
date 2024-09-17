@@ -6,14 +6,15 @@ import { ReportTranslated } from '../types/report-translated.type'
  */
 const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 	// --- Added from ReportParser --- //
+	cik: ['cik'],
+	url: ['url'],
 	dateReport: ['dateReport'],
 	dateFiled: ['dateFiled'],
 	fiscalPeriod: ['fiscalPeriod'],
 	fiscalYear: ['fiscalYear'],
-	form: ['form'],
-	isTTM: ['isTTM'],
+	splitDate: ['splitDate'],
+	splitRatio: ['StockholdersEquityNoteStockSplitConversionRatio1'],
 	// ------------------------------- //
-
 	assetTotal: ['Assets'],
 	assetCurrent: ['AssetsCurrent', 'CurrentAssets'],
 	assetCurrentCashEquivalents: [
@@ -95,6 +96,7 @@ const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 		'ConvertibleLongTermNotesPayable',
 		'LongTermNotesAndLoans',
 		'DebtAndCapitalLeaseObligations',
+		'LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities',
 	],
 	equityTotal: [
 		'StockholdersEquity',

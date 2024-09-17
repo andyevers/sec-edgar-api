@@ -8,20 +8,16 @@ describe('ReportParser', () => {
 
 	test('parseReportsRaw', () => {
 		const reportsRaw = reportParser.parseReportsRaw(companyFacts)
-		const report8K = reportsRaw.find((report) => report.reportType === '8K') ?? null
-
-		expect(report8K).not.toBeNull()
 
 		expect(reportsRaw).toContainEqual({
-			dateReport: '2022-12-31',
+			cik: 320193,
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000006/0000320193-23-000006.txt',
 			dateFiled: '2023-02-03',
-			form: '10-Q',
-			isTTM: false,
-			frame: 'CY2022Q4',
-			taxonomy: 'us-gaap',
-			reportType: 'QUARTERLY',
+			dateReport: '2022-12-31',
 			fiscalPeriod: 'Q1',
 			fiscalYear: 2023,
+			splitDate: null,
+			splitRatio: null,
 			EntityCommonStockSharesOutstanding: 15821946000,
 			AccountsPayableCurrent: 57918000000,
 			AccountsReceivableNetCurrent: 23752000000,
@@ -45,8 +41,8 @@ describe('ReportParser', () => {
 		expect(report.dateFiled).toBe(reportRaw.dateFiled)
 		expect(report.fiscalPeriod).toBe(reportRaw.fiscalPeriod)
 		expect(report.fiscalYear).toBe(reportRaw.fiscalYear)
-		expect(report.form).toBe(reportRaw.form)
-		expect(report.isTTM).toBe(reportRaw.isTTM)
+		// expect(report.form).toBe(reportRaw.form)
+		// expect(report.isTTM).toBe(reportRaw.isTTM)
 
 		expect(report.assetTotal).toBe(reportRaw.Assets)
 		expect(report.assetCurrent).toBe(reportRaw.AssetsCurrent)
