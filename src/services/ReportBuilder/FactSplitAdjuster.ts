@@ -7,6 +7,7 @@ interface SplitData {
 	value: number
 	firstFiled: string
 	fiscalYear: number
+	fiscalPeriod: FiscalPeriod
 }
 
 type FactItemWithFiscalsNumeric = Omit<FactItemWithFiscals, 'cik' | 'value'> & { value: number }
@@ -29,12 +30,13 @@ export default class FactSplitAdjuster {
 	private getMap(map: Map<string, Map<string, FactItemWithFiscalsNumeric>>, propertyName: string) {
 		return map.get(propertyName) ?? map.set(propertyName, new Map()).get(propertyName)!
 	}
+	private filedFirstLastBySplitKey = new Map<string, { firstFiled: string; lastFiled: string }>()
 
-	public add(fact: FactItemWithFiscalsNumeric) {
+	public add(fact: FactItemWithFiscalsNumeric & { filedLast?: string }) {
 		const { name: propertyName, year, fiscalPeriod, unit, filed, value, end } = fact
 
 		if (this.isSplitProperty(propertyName)) {
-			this.addSplitData({ end, filed, fiscalYear: year, value: Number(value) })
+			this.addSplitData({ end, filed, fiscalYear: year, value: Number(value), fiscalPeriod })
 			return
 		}
 
@@ -50,6 +52,11 @@ export default class FactSplitAdjuster {
 			: this.getMap(this.factsByYearQuarterByPropertyName, propertyName)
 
 		const key = `${year}_${fiscalPeriod}`
+
+		this.filedFirstLastBySplitKey.set(key, {
+			firstFiled: filed,
+			lastFiled: fact.filedLast ?? filed,
+		})
 
 		map.set(key, fact)
 	}
@@ -110,42 +117,41 @@ export default class FactSplitAdjuster {
 	 */
 	private didApplySplit(params: {
 		isShareRatio: boolean
-		value: number
-		filed: string
-		nextValue: number | null
-		prevValue: number | null
+		nextFact: FactItemWithFiscalsNumeric | null
+		prevFact: FactItemWithFiscalsNumeric | null
+		fact: FactItemWithFiscalsNumeric
 		split: SplitData
 	}) {
-		const { nextValue, prevValue, split, isShareRatio, value, filed } = params
+		const { isShareRatio, nextFact, prevFact, fact, split } = params
 
-		if (filed > split.filed) {
+		const { firstFiled, lastFiled } =
+			this.filedFirstLastBySplitKey.get(`${split.fiscalYear}_${split.fiscalPeriod}`) ?? {}
+
+		if (fact.filed > lastFiled!) {
 			return true
 		}
 
-		const dateFiled = new Date(filed)
-
-		// TODO: adust by adding a year because sometimes the already adjusted facts are filed within the
-		// year before the split. this might be because the split is listed under a different property? Look into this...
-		if (dateFiled.setFullYear(dateFiled.getFullYear() + 1) < new Date(split.firstFiled).getTime()) {
+		if (fact.filed < firstFiled!) {
 			return false
 		}
 
-		const valWithSplit = isShareRatio ? value / split.value : value * split.value
+		const val = fact.value
+		const splitVal = split.value
+		const valWithSplit = isShareRatio ? splitVal * val : val / splitVal
 
-		// if we still don't know, see if applying the split puts us closer or further from the prev/next quarter value.
-		if (prevValue !== null) {
-			const difference = Math.abs(prevValue - value)
-			const differenceSplit = Math.abs(prevValue - valWithSplit)
+		if (nextFact) {
+			const difference = Math.abs(nextFact.value - val)
+			const differenceSplit = Math.abs(nextFact.value - valWithSplit)
 			return difference < differenceSplit
 		}
 
-		if (nextValue !== null) {
-			const difference = Math.abs(nextValue - value)
-			const differenceSplit = Math.abs(nextValue - valWithSplit)
+		if (prevFact) {
+			const difference = Math.abs(prevFact.value - val)
+			const differenceSplit = Math.abs(prevFact.value - valWithSplit)
 			return difference < differenceSplit
 		}
 
-		return true
+		return false
 	}
 
 	public isSplitAdjustableUnit(unit: string) {
@@ -218,16 +224,22 @@ export default class FactSplitAdjuster {
 			for (let factIndex = facts.length - 1; factIndex >= 0; factIndex--) {
 				const fact = facts[factIndex]
 				const { value, filed } = fact
-				const nextValue = facts[factIndex + 1]?.value ?? null
-				const prevValue = facts[factIndex - 1]?.value ?? null
+
+				const nextFact = facts[factIndex + 1] ?? null
+				const prevFact = facts[factIndex - 1] ?? null
+				// const nextValue = facts[factIndex + 1]?.value ?? null
+				// const prevValue = facts[factIndex - 1]?.value ?? null
 
 				const didApplySplit = this.didApplySplit({
-					filed,
+					// filed,
 					isShareRatio,
-					nextValue,
-					prevValue,
+					// nextValue,
+					// prevValue,
+					fact,
+					nextFact,
+					prevFact,
 					split,
-					value,
+					// value,
 				})
 
 				if (didApplySplit || !split.value) {

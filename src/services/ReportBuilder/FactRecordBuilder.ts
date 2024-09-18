@@ -5,7 +5,7 @@ import { CompanyFactListData } from '../../types'
  * Builds an array of fact records.
  */
 export default class FactRecordBuilder {
-	public createFacts(data: CompanyFactListData, filterDuplicates = true) {
+	public createFacts(data: CompanyFactListData, filterDuplicates = false) {
 		const { facts, cik } = data
 
 		const factsByKey = new Map<string | number, FactItem>()

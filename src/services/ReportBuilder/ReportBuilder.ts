@@ -61,13 +61,17 @@ export default class ReportBuilder {
 		reportDates?.forEach((params) => factFiscalCalculator.setReportDates(params))
 
 		const unitByPropertyName = new Map<string, string>()
-		const splitDateDataByKey = new Map<string, { end: string; quarter: number }>()
+		const splitDateDataByKey = new Map<
+			string,
+			{ end: string; quarter: number; firstFiled: string; lastFiled: string }
+		>()
 
 		let minYear = Infinity
 		let maxYear = -Infinity
 
 		const countByAccnByYearQuarter = new Map<string, Map<string, number>>()
 		const filedByPropertyYearQuarterValue = new Map<string, string>()
+		const filedLastByPropertyYearQuarterValue = new Map<string, string>()
 
 		for (const fact of facts) {
 			const { end, name, unit, segments, start, value, cik, form, filed, accn } = fact
@@ -90,10 +94,24 @@ export default class ReportBuilder {
 			const isSplit = factSplitAdjuster.isSplitProperty(propertyName)
 
 			unitByPropertyName.set(propertyNameWithSegment, unit)
-			filedByPropertyYearQuarterValue.set(factFiledKey, filed)
 
-			if (isSplit && new Date(end) > new Date(splitDateDataByKey.get(splitKey)?.end ?? 0)) {
-				splitDateDataByKey.set(splitKey, { end, quarter })
+			const prevFirstFiled = filedByPropertyYearQuarterValue.get(factFiledKey)
+			const prevLastFiled = filedLastByPropertyYearQuarterValue.get(factFiledKey)
+			if (!prevFirstFiled || prevFirstFiled > filed) {
+				filedByPropertyYearQuarterValue.set(factFiledKey, filed)
+			}
+			if (!prevLastFiled || prevLastFiled < filed) {
+				filedLastByPropertyYearQuarterValue.set(factFiledKey, filed)
+			}
+
+			if (isSplit) {
+				const isNewLatestDate = new Date(end) > new Date(splitDateDataByKey.get(splitKey)?.end ?? 0)
+				splitDateDataByKey.set(splitKey, {
+					end: isNewLatestDate ? end : splitDateDataByKey.get(splitKey)?.end ?? end,
+					quarter: isNewLatestDate ? quarter : splitDateDataByKey.get(splitKey)?.quarter ?? quarter,
+					firstFiled: filedByPropertyYearQuarterValue.get(factFiledKey) ?? filed,
+					lastFiled: filedLastByPropertyYearQuarterValue.get(factFiledKey) ?? filed,
+				})
 			}
 
 			const accnKey = `${year}_${quarter}`
