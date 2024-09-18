@@ -28,6 +28,9 @@ export interface FactItemWithFiscals extends FactItem {
 	year: number
 }
 
+/**
+ * Builds ReportRaw objects from facts. also applies splits and adjusts for fiscal periods.
+ */
 export default class ReportBuilder {
 	private readonly factRecordBuilder = new FactRecordBuilder()
 
@@ -64,6 +67,7 @@ export default class ReportBuilder {
 		let maxYear = -Infinity
 
 		const countByAccnByYearQuarter = new Map<string, Map<string, number>>()
+		const filedByPropertyYearQuarterValue = new Map<string, string>()
 
 		for (const fact of facts) {
 			const { end, name, unit, segments, start, value, cik, form, filed, accn } = fact
@@ -82,9 +86,11 @@ export default class ReportBuilder {
 			if (year > maxYear) maxYear = year
 
 			const splitKey = `${year}_${value}`
+			const factFiledKey = `${year}_${quarter}_${propertyNameWithSegment}_${value}`
 			const isSplit = factSplitAdjuster.isSplitProperty(propertyName)
 
 			unitByPropertyName.set(propertyNameWithSegment, unit)
+			filedByPropertyYearQuarterValue.set(factFiledKey, filed)
 
 			if (isSplit && new Date(end) > new Date(splitDateDataByKey.get(splitKey)?.end ?? 0)) {
 				splitDateDataByKey.set(splitKey, { end, quarter })
@@ -102,8 +108,6 @@ export default class ReportBuilder {
 				countByAccnByYearQuarter.set(accnKey, countByAccn)
 			}
 
-			const dates = factFiscalCalculator.getDatesByYearQuarter({ quarter, year })
-
 			factPeriodResolver.add({
 				year,
 				start,
@@ -111,8 +115,7 @@ export default class ReportBuilder {
 				name: propertyNameWithSegment,
 				quarter,
 				value,
-				dateFiled: dates?.filed ?? '',
-				dateReport: dates?.end ?? '',
+				filed,
 			})
 		}
 
@@ -162,10 +165,13 @@ export default class ReportBuilder {
 				})
 			}
 
+			const filedKey = `${year}_${quarter}_${propertyName}_${value}`
+
 			// add facts to adjust for splits
 			factSplitAdjuster.add({
 				end,
-				filed,
+				// use the original fact filed date instead of the report filed date to know if the fact has been split.
+				filed: filedByPropertyYearQuarterValue.get(filedKey) ?? filed,
 				fiscalPeriod,
 				name: propertyName,
 				unit: unitByPropertyName.get(propertyName) ?? '',

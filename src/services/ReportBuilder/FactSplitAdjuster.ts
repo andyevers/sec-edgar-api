@@ -11,6 +11,10 @@ interface SplitData {
 
 type FactItemWithFiscalsNumeric = Omit<FactItemWithFiscals, 'cik' | 'value'> & { value: number }
 
+/**
+ * Adjust share-based property values for splits. Checks where the split was applied,
+ * and adjusts all previously filed share facts accordingly.
+ */
 export default class FactSplitAdjuster {
 	private readonly splitKey = 'StockholdersEquityNoteStockSplitConversionRatio1'
 	private readonly splitByFiscalYearAmount = new Map<string, SplitData>()
@@ -101,6 +105,9 @@ export default class FactSplitAdjuster {
 		}
 	}
 
+	/**
+	 * TODO: Find a more reliable way of checking if the split has already been applied.
+	 */
 	private didApplySplit(params: {
 		isShareRatio: boolean
 		value: number
@@ -115,11 +122,22 @@ export default class FactSplitAdjuster {
 			return true
 		}
 
-		if (filed < split.firstFiled) {
+		const dateFiled = new Date(filed)
+
+		// TODO: adust by adding a year because sometimes the already adjusted facts are filed within the
+		// year before the split. this might be because the split is listed under a different property? Look into this...
+		if (dateFiled.setFullYear(dateFiled.getFullYear() + 1) < new Date(split.firstFiled).getTime()) {
 			return false
 		}
 
 		const valWithSplit = isShareRatio ? value / split.value : value * split.value
+
+		// if we still don't know, see if applying the split puts us closer or further from the prev/next quarter value.
+		if (prevValue !== null) {
+			const difference = Math.abs(prevValue - value)
+			const differenceSplit = Math.abs(prevValue - valWithSplit)
+			return difference < differenceSplit
+		}
 
 		if (nextValue !== null) {
 			const difference = Math.abs(nextValue - value)
@@ -127,13 +145,7 @@ export default class FactSplitAdjuster {
 			return difference < differenceSplit
 		}
 
-		if (prevValue !== null) {
-			const difference = Math.abs(prevValue - value)
-			const differenceSplit = Math.abs(prevValue - valWithSplit)
-			return difference < differenceSplit
-		}
-
-		return false
+		return true
 	}
 
 	public isSplitAdjustableUnit(unit: string) {
@@ -218,7 +230,7 @@ export default class FactSplitAdjuster {
 					value,
 				})
 
-				if (didApplySplit) {
+				if (didApplySplit || !split.value) {
 					continue
 				}
 

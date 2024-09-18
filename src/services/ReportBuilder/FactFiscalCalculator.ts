@@ -7,6 +7,10 @@ export interface SetReportDatesParams {
 	accn: string
 }
 
+/**
+ * Gets the fiscal period for a given date. does this by checking when the FY end periods are,
+ * Then measures the offset from the end date to the next/previous fiscal year end.
+ */
 export default class FactFiscalCalculator {
 	private readonly endDateByYear = new Map<number, Date>()
 

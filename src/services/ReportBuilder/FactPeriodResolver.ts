@@ -1,6 +1,11 @@
 import { FiscalPeriod } from '../../types/report-raw.type'
 import ReportRawResolvable from './ReportRawResolvable'
 
+/**
+ * Resolves quarterly and annual values for a property. This is because filers provide total values for the
+ * current fiscal year, rather than values for the individual quarters
+ * ex: Net income for Q2 will give 6 months revenue, not 3 month.
+ */
 export default class FactPeriodResolver {
 	/** Values for each quarter [numQ1, numQ2, numQ3, numQ4] */
 	private readonly valueByQuarterByPropertyByYear = new Map<number, Map<string, Map<number, number>>>()
@@ -142,10 +147,9 @@ export default class FactPeriodResolver {
 		end: string
 		value: number | string
 		name: string
-		dateReport: string
-		dateFiled: string
+		filed: string
 	}) {
-		const { year, value, name: propertyName, quarter, start, end, dateReport, dateFiled } = params
+		const { year, value, name: propertyName, quarter, start, end, filed } = params
 
 		const period = this.getPeriod({ start, end })
 
