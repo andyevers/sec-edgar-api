@@ -80,7 +80,7 @@ export default class ReportBuilder {
 
 	private createReportKey(params: { year: number; quarter: number; isAnnual: boolean }) {
 		const { year, quarter, isAnnual } = params
-		return `${year}_${quarter}${isAnnual ? '_FY' : ''}`
+		return `${year}_${isAnnual ? 'FY' : `Q${quarter}`}`
 	}
 
 	private createReport(params: {
@@ -110,7 +110,7 @@ export default class ReportBuilder {
 	}
 
 	private round(value: number | string) {
-		const multiplier = 100_000
+		const multiplier = 1_000_000
 		return typeof value === 'number' ? Math.round(value * multiplier) / multiplier : value
 	}
 

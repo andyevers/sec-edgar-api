@@ -49,8 +49,9 @@ export default class FactGrouper {
 		cik: number
 		fiscalCalculator: FactFiscalCalculator
 		resolvePeriodValues: boolean
+		generateMissingGroups?: boolean
 	}) {
-		const { facts, cik, fiscalCalculator, resolvePeriodValues } = params
+		const { facts, cik, fiscalCalculator, resolvePeriodValues, generateMissingGroups = false } = params
 
 		// min and max year will be used to sort the reports
 		let minYear = 0
@@ -161,7 +162,7 @@ export default class FactGrouper {
 		periodResolver.forEach(({ propertyName, quarter, valueQuarter, valueTrailing, year }) => {
 			const groupKey = this.createGroupKey({ fiscalYear: year, name: propertyName, quarter })
 			let group = factGroupByKey.get(groupKey)
-			if (!group && !resolvePeriodValues) return
+			if (!group && (!resolvePeriodValues || !generateMissingGroups)) return
 
 			const { end, filed } = fiscalCalculator.getDatesByYearQuarter({ quarter, year }) ?? { end: '', filed: '' }
 
@@ -176,6 +177,7 @@ export default class FactGrouper {
 					reportFiled: filed,
 					endFirst: end,
 					endLast: end,
+					name: propertyName,
 					accn: accnByFiled.get(filed) ?? '',
 					unit: unitByPropertyName.get(propertyName) ?? '',
 					isResolverGenerated: true,
