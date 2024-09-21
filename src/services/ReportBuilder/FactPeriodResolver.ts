@@ -103,7 +103,7 @@ export default class FactPeriodResolver {
 		return { bucketQuarter, bucketSum, bucketString }
 	}
 
-	private getPeriod(params: { start?: string; end: string }) {
+	public getPeriod(params: { start?: string; end: string }) {
 		const { start, end } = params
 
 		if (!start || start === end) return 0
@@ -140,6 +140,12 @@ export default class FactPeriodResolver {
 		return report
 	}
 
+	public isFiledRecent(params: { end: string; filed: string }) {
+		const { end, filed } = params
+		const DAY_60_MS = 5_184_000_000
+		return new Date(filed).getTime() - new Date(end).getTime() < DAY_60_MS
+	}
+
 	public add(params: {
 		year: number
 		quarter: number
@@ -155,28 +161,41 @@ export default class FactPeriodResolver {
 
 		this.addPropertyByYear(this.propertiesByYear, year, propertyName)
 
+		const bucketIndex = quarter - 1
 		if (typeof value === 'string') {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYearString, year, propertyName)
-			bucket.set(quarter - 1, value)
+
+			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+				bucket.set(bucketIndex, value)
+			}
 			return
 		}
 
 		if (period === 0) {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYear, year, propertyName)
 			const bucketSum = this.getOrSetBucketArr(this.sumByQuarterByPropertyByYear, year, propertyName)
-			bucket.set(quarter - 1, value)
-			bucketSum.set(quarter - 1, value)
+
+			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+				bucket.set(bucketIndex, value)
+				bucketSum.set(bucketIndex, value)
+			}
 			return
 		}
 
 		if (period === 3) {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYear, year, propertyName)
-			bucket.set(quarter - 1, value)
+
+			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+				bucket.set(bucketIndex, value)
+			}
 		}
 
 		if (quarter === 1 || period > 3) {
 			const bucket = this.getOrSetBucketArr(this.sumByQuarterByPropertyByYear, year, propertyName)
-			bucket.set(quarter - 1, value)
+
+			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+				bucket.set(bucketIndex, value)
+			}
 		}
 
 		this.addPropertyByYear(this.propertiesResolvableByYear, year, propertyName)
@@ -225,6 +244,9 @@ export default class FactPeriodResolver {
 			fiscalPeriod: FiscalPeriod
 			propertyName: string
 			value: number | string
+			valueQuarter: number
+			valueTrailing: number
+			quarter: number
 		}) => void,
 	) {
 		this.buildUnresolvedReports()
@@ -233,12 +255,22 @@ export default class FactPeriodResolver {
 			properties.forEach((propertyName) => {
 				this.resolveValues(propertyName, year)
 
-				for (let i = 0; i < 5; i++) {
+				for (let i = 0; i < 4; i++) {
 					const isAnnual = i === 4
 					const { bucketQuarter, bucketSum, bucketString } = this.getPropertyBuckets(year, propertyName)
+					const valueQuarter = bucketQuarter.get(i) ?? bucketString.get(i)
+					const valueTrailing = bucketSum.get(i)
 					const value = (isAnnual ? bucketSum.get(3) : bucketQuarter.get(i)) ?? bucketString.get(i)
-					const fiscalPeriod = isAnnual ? 'FY' : (`Q${i + 1}` as FiscalPeriod)
-					callback({ year, fiscalPeriod, propertyName, value })
+					const quarter = i + 1
+					callback({
+						year,
+						fiscalPeriod: `Q${quarter}` as FiscalPeriod,
+						propertyName,
+						value,
+						quarter,
+						valueQuarter,
+						valueTrailing,
+					})
 				}
 			})
 		})

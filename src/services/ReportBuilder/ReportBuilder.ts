@@ -1,45 +1,35 @@
-import { CompanyFactListData, FiscalPeriod, ReportRaw } from '../../types'
+import { CompanyFactListData, FactGroup, FactItem, FiscalPeriod, ReportRaw, SplitData } from '../../types'
 import FactFiscalCalculator, { SetReportDatesParams } from './FactFiscalCalculator'
-import FactPeriodResolver from './FactPeriodResolver'
+import FactGrouper from './FactGrouper'
 import FactRecordBuilder from './FactRecordBuilder'
 import FactSplitAdjuster from './FactSplitAdjuster'
 
-export interface FactItem {
-	cik: number | string
-	end: string
-	filed: string
-	name: string
-	unit: string
-	value: number | string
-	start?: string
-	hasSegments?: boolean
-	accn?: string
-	form?: string
-	fp?: string
-	frame?: string
-	fy?: number
-	/** For XBRL reports only */
-	segments?: { value: string; dimension: string }[]
-	uuid?: string
-}
-
-export interface FactItemWithFiscals extends FactItem {
-	fiscalPeriod: FiscalPeriod
-	year: number
-}
-
-/**
- * Builds ReportRaw objects from facts. also applies splits and adjusts for fiscal periods.
- */
 export default class ReportBuilder {
 	private readonly factRecordBuilder = new FactRecordBuilder()
 
-	public createFacts(companyFacts: CompanyFactListData) {
-		return this.factRecordBuilder.createFacts(companyFacts)
+	public createFacts(companyFacts: CompanyFactListData, includeNamePrefix = false) {
+		return this.factRecordBuilder.createFacts(companyFacts, includeNamePrefix)
 	}
 
-	public buildReports(params: { facts: FactItem[]; reportDates?: SetReportDatesParams[] }) {
-		const { facts, reportDates } = params
+	private createFiscalCalculator(params: { facts: FactItem[] }) {
+		const { facts } = params
+		const fiscalCalculator = new FactFiscalCalculator()
+
+		for (const fact of facts) {
+			fiscalCalculator.add(fact)
+		}
+
+		return fiscalCalculator
+	}
+
+	public buildReports(params: {
+		facts: FactItem[]
+		reportDates?: SetReportDatesParams[]
+		splits?: SplitData[]
+		resolvePeriodValues?: boolean
+		adjustForSplits?: boolean
+	}) {
+		const { facts, reportDates, splits: splitsProp, resolvePeriodValues = true, adjustForSplits = true } = params
 
 		if (facts.length === 0) {
 			return []
@@ -52,207 +42,160 @@ export default class ReportBuilder {
 		})
 
 		const reportsCik = Number(facts[0].cik)
+		const fiscalCalculator = this.createFiscalCalculator({ facts })
 
-		const factFiscalCalculator = new FactFiscalCalculator()
-		const factPeriodResolver = new FactPeriodResolver({ cik: reportsCik })
+		const factGrouper = new FactGrouper()
+
+		const { factGroupsByReportKey, maxYear, minYear } = factGrouper.buildFactGroupsByReportKey({
+			facts,
+			cik: reportsCik,
+			fiscalCalculator,
+			resolvePeriodValues,
+		})
+
 		const factSplitAdjuster = new FactSplitAdjuster()
 
-		facts.forEach((fact) => factFiscalCalculator.add(fact))
-		reportDates?.forEach((params) => factFiscalCalculator.setReportDates(params))
+		// if splits not included in params and need to adjust, extract from facts
+		const splits = adjustForSplits
+			? splitsProp ?? factSplitAdjuster.getSplits({ splitFacts: factSplitAdjuster.filterSplitFacts({ facts }) })
+			: splitsProp
 
-		const unitByPropertyName = new Map<string, string>()
-		const splitDateDataByKey = new Map<
-			string,
-			{ end: string; quarter: number; firstFiled: string; lastFiled: string }
-		>()
+		if (adjustForSplits) {
+			// mutates factGroups to adjust for splits
+			factSplitAdjuster.adjustForSplits({
+				factGroups: Array.from(factGroupsByReportKey.values()).flat(),
+				splits: splits ?? [],
+			})
+		}
 
-		let minYear = Infinity
-		let maxYear = -Infinity
+		return this.buildReportsFromGroups({
+			factGroupsByReportKey,
+			fiscalCalculator,
+			splits,
+			minYear,
+			maxYear,
+			cik: reportsCik,
+		})
+	}
 
-		const countByAccnByYearQuarter = new Map<string, Map<string, number>>()
-		const filedByPropertyYearQuarterValue = new Map<string, string>()
-		const filedLastByPropertyYearQuarterValue = new Map<string, string>()
+	private createReportKey(params: { year: number; quarter: number; isAnnual: boolean }) {
+		const { year, quarter, isAnnual } = params
+		return `${year}_${quarter}${isAnnual ? '_FY' : ''}`
+	}
 
-		for (const fact of facts) {
-			const { end, name, unit, segments, start, value, cik, form, filed, accn } = fact
+	private createReport(params: {
+		group: FactGroup
+		isAnnual: boolean
+		cik: number
+		splitDate?: string | null
+		splitRatio?: number | null
+	}): ReportRaw {
+		const { group, isAnnual, splitDate, splitRatio, cik } = params
+		const fiscalPeriod = isAnnual ? 'FY' : (`Q${group.quarter}` as FiscalPeriod)
+		const accessionNoHyphen = group.accn?.replace(/-/g, '')
+		const url = group.accn
+			? `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoHyphen}/${group.accn}.txt`
+			: null
 
-			if (Number(fact.cik) !== Number(reportsCik)) {
-				throw new Error(`All facts must have the same cik ${reportsCik} !== ${Number(cik)}`)
-			}
+		return {
+			cik: cik,
+			url: url,
+			dateFiled: group.reportFiled,
+			dateReport: group.reportEnd,
+			fiscalPeriod,
+			fiscalYear: group.fiscalYear,
+			splitDate: splitDate ?? null,
+			splitRatio: splitRatio ?? null,
+		}
+	}
 
-			const segmentValue = segments?.map((seg) => `${seg.dimension}_${seg.value}`).join('&')
-			const propertyName = name.split(':').pop() ?? ''
-			const propertyNameWithSegment = propertyName + (segmentValue ? `_${segmentValue}` : '')
+	private round(value: number | string) {
+		const multiplier = 100_000
+		return typeof value === 'number' ? Math.round(value * multiplier) / multiplier : value
+	}
 
-			const { quarter, year } = factFiscalCalculator.getFiscalYearQuarter({ dateStr: end })
+	public buildReportsFromGroups(params: {
+		factGroupsByReportKey: Map<string, FactGroup[]>
+		fiscalCalculator: FactFiscalCalculator
+		splits?: SplitData[]
+		minYear: number
+		maxYear: number
+		cik: number
+	}) {
+		const { factGroupsByReportKey, minYear, maxYear, cik, splits, fiscalCalculator } = params
 
-			if (year < minYear) minYear = year
-			if (year > maxYear) maxYear = year
+		const splitByFiscals = new Map<string, SplitData>()
+		const reportByKey = new Map<string, ReportRaw>()
 
-			const splitKey = `${year}_${value}`
-			const factFiledKey = `${year}_${quarter}_${propertyNameWithSegment}_${value}`
-			const isSplit = factSplitAdjuster.isSplitProperty(propertyName)
+		splits?.forEach((split) => {
+			const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: split.endLast })
+			splitByFiscals.set(`${year}_${quarter}`, split)
+		})
 
-			unitByPropertyName.set(propertyNameWithSegment, unit)
+		factGroupsByReportKey.forEach((groups) => {
+			const groupWithDates = groups.find((g) => g.reportEnd)!
+			if (!groupWithDates) return
 
-			const prevFirstFiled = filedByPropertyYearQuarterValue.get(factFiledKey)
-			const prevLastFiled = filedLastByPropertyYearQuarterValue.get(factFiledKey)
-			if (!prevFirstFiled || prevFirstFiled > filed) {
-				filedByPropertyYearQuarterValue.set(factFiledKey, filed)
-			}
-			if (!prevLastFiled || prevLastFiled < filed) {
-				filedLastByPropertyYearQuarterValue.set(factFiledKey, filed)
-			}
+			const split = splitByFiscals.get(`${groupWithDates.fiscalYear}_${groupWithDates.quarter}`)
+			const splitDate = split?.endLast ?? null
+			const splitRatio = split?.splitRatio ?? null
 
-			if (isSplit) {
-				const isNewLatestDate = new Date(end) > new Date(splitDateDataByKey.get(splitKey)?.end ?? 0)
-				splitDateDataByKey.set(splitKey, {
-					end: isNewLatestDate ? end : splitDateDataByKey.get(splitKey)?.end ?? end,
-					quarter: isNewLatestDate ? quarter : splitDateDataByKey.get(splitKey)?.quarter ?? quarter,
-					firstFiled: filedByPropertyYearQuarterValue.get(factFiledKey) ?? filed,
-					lastFiled: filedLastByPropertyYearQuarterValue.get(factFiledKey) ?? filed,
-				})
-			}
+			const quarter = groupWithDates.quarter
 
-			const accnKey = `${year}_${quarter}`
-			const accnGiven = accessionByYearQuarter.get(accnKey)
+			const reportPeriod = this.createReport({
+				group: groupWithDates,
+				cik,
+				isAnnual: false,
+				splitDate,
+				splitRatio,
+			})
 
-			const filedDistance = Math.abs(new Date(filed).getTime() - new Date(end ?? 0).getTime()) / 86_400_000
-			const isFiledRecent = filedDistance < 60
-
-			if (!accnGiven && isFiledRecent && accn && (!form || form === '10-K' || form === '10-Q')) {
-				const countByAccn = countByAccnByYearQuarter.get(accnKey) ?? new Map()
-				countByAccn.set(accn, (countByAccn.get(accn) ?? 0) + 1)
-				countByAccnByYearQuarter.set(accnKey, countByAccn)
-			}
-
-			factPeriodResolver.add({
-				year,
-				start,
-				end,
-				name: propertyNameWithSegment,
+			const reportKeyPeriod = this.createReportKey({
+				year: reportPeriod.fiscalYear,
 				quarter,
-				value,
-				filed,
-			})
-		}
-
-		countByAccnByYearQuarter.forEach((countByAccn, yearQuarter) => {
-			if (accessionByYearQuarter.has(yearQuarter)) return
-			let maxCount = 0
-			let accessionNumber = ''
-			countByAccn.forEach((count, accn) => {
-				if (count > maxCount) {
-					maxCount = count
-					accessionNumber = accn
-				}
-			})
-			accessionByYearQuarter.set(yearQuarter, accessionNumber)
-		})
-
-		minYear = Number.isFinite(minYear) ? minYear : new Date().getFullYear()
-		maxYear = Number.isFinite(maxYear) ? maxYear : new Date().getFullYear()
-
-		const reportsByKey = new Map<string, ReportRaw>()
-
-		// resolves quarterly and annual properties and creates reports
-		factPeriodResolver.forEach((data) => {
-			const { fiscalPeriod, propertyName, value, year } = data
-			const key = `${year}_${fiscalPeriod}`
-
-			const quarter = fiscalPeriod === 'FY' ? 4 : Number(fiscalPeriod[1])
-			const dates = factFiscalCalculator.getDatesByYearQuarter({ quarter, year })
-
-			const { filed, end } = dates ?? { filed: '', end: '' }
-			const accessionNumber = accessionByYearQuarter.get(`${year}_${quarter}`)
-			const accessionNoHyphen = accessionNumber?.replace(/-/g, '')
-			const url = accessionNumber
-				? `https://www.sec.gov/Archives/edgar/data/${reportsCik}/${accessionNoHyphen}/${accessionNumber}.txt`
-				: null
-
-			if (!reportsByKey.has(key)) {
-				reportsByKey.set(key, {
-					cik: reportsCik,
-					url,
-					dateFiled: filed,
-					dateReport: end,
-					fiscalPeriod,
-					fiscalYear: year,
-					splitDate: null,
-					splitRatio: null,
-				})
-			}
-
-			const filedKey = `${year}_${quarter}_${propertyName}_${value}`
-
-			// add facts to adjust for splits
-			factSplitAdjuster.add({
-				end,
-				// use the original fact filed date instead of the report filed date to know if the fact has been split.
-				filed: filedByPropertyYearQuarterValue.get(filedKey) ?? filed,
-				fiscalPeriod,
-				name: propertyName,
-				unit: unitByPropertyName.get(propertyName) ?? '',
-				year,
-				value: Number(value),
-				accn: accessionNumber ?? '',
+				isAnnual: false,
 			})
 
-			const report = reportsByKey.get(key)!
-			report[propertyName] = value
-		})
-
-		// iterate through facts adjustable for splits and assign values to reports
-		factSplitAdjuster.forEach((data) => {
-			const { year, fiscalPeriod, propertyName, value } = data
-			const key = `${year}_${fiscalPeriod}`
-			const report = reportsByKey.get(key)
-
-			if (!report) return
-			report[propertyName] = Math.round(value * 10000) / 10000
-		})
-
-		// add split dates and values to reports
-		factSplitAdjuster.getSplitsAsc().forEach((split) => {
-			const { quarter, year } = factFiscalCalculator.getFiscalYearQuarter({ dateStr: split.end })
-
-			const keySplit = `${year}_${split.value}`
-
-			const splitDateData = splitDateDataByKey.get(keySplit) ?? { end: null, quarter: null }
-			const splitDate = splitDateData.end ?? split.filed
-			const splitQuarter = splitDateData.quarter ?? quarter
-
-			const fiscalPeriod = `Q${splitQuarter}`
-			const keyReport = `${year}_${fiscalPeriod}`
-
-			const report = reportsByKey.get(keyReport)
-			const reportAnnual = splitQuarter === 4 ? reportsByKey.get(`${year}_FY`) ?? null : null
-
-			if (report) {
-				report.splitRatio = split.value
-				report.splitDate = splitDate
+			for (const group of groups) {
+				const value = group.valueSplitAdjustedPeriod ?? group.valuePeriodResolved ?? group.valuePeriodFirst ?? 0
+				reportPeriod[group.name] = this.round(value)
 			}
 
-			// also assign to annual for Q4
-			if (reportAnnual) {
-				reportAnnual.splitRatio = split.value
-				reportAnnual.splitDate = splitDate
+			reportByKey.set(reportKeyPeriod, reportPeriod)
+			if (quarter !== 4) return
+
+			const reportAnnual = this.createReport({
+				group: groupWithDates,
+				cik,
+				isAnnual: true,
+				splitDate,
+				splitRatio,
+			})
+
+			const reportKeyAnnual = `${reportAnnual.fiscalYear}_${reportAnnual.fiscalPeriod}`
+
+			for (const group of groups) {
+				const value =
+					group.valueSplitAdjustedTrailing ?? group.valueTrailingResolved ?? group.valueTrailingFirst ?? 0
+				reportAnnual[group.name] = this.round(value)
 			}
+
+			reportByKey.set(reportKeyAnnual, reportAnnual)
 		})
 
-		// sort reports ASC by year and quarter
-		const reportsSorted: ReportRaw[] = []
+		const reports: ReportRaw[] = []
+
 		for (let year = minYear; year <= maxYear; year++) {
-			for (let i = 0; i < 5; i++) {
-				const fiscalPeriod = i === 4 ? 'FY' : `Q${i + 1}`
-				const key = `${year}_${fiscalPeriod}`
-				const report = reportsByKey.get(key)
-				if (report && report.dateReport) {
-					reportsSorted.push(report)
+			for (let quarter = 1; quarter <= 5; quarter++) {
+				const isAnnual = quarter === 5
+				const reportKey = this.createReportKey({ year, quarter: isAnnual ? 4 : quarter, isAnnual })
+				const report = reportByKey.get(reportKey)
+				if (report) {
+					reports.push(report)
 				}
 			}
 		}
 
-		return reportsSorted
+		return reports
 	}
 }

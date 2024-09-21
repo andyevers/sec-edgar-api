@@ -1,256 +1,160 @@
-import { FiscalPeriod } from '../../types/report-raw.type'
-import { FactItemWithFiscals } from './ReportBuilder'
+import { CompanyFactListData, FactGroup, FactItem, FactValue, SplitData } from '../../types'
 
-interface SplitData {
-	end: string
-	filed: string
-	value: number
-	firstFiled: string
-	fiscalYear: number
-	fiscalPeriod: FiscalPeriod
-}
-
-type FactItemWithFiscalsNumeric = Omit<FactItemWithFiscals, 'cik' | 'value'> & { value: number }
-
-/**
- * Adjust share-based property values for splits. Checks where the split was applied,
- * and adjusts all previously filed share facts accordingly.
- */
 export default class FactSplitAdjuster {
-	private readonly splitKey = 'StockholdersEquityNoteStockSplitConversionRatio1'
-	private readonly splitByFiscalYearAmount = new Map<string, SplitData>()
+	private readonly keySplit = 'StockholdersEquityNoteStockSplitConversionRatio1'
 
-	private readonly factsByYearQuarterByPropertyName = new Map<string, Map<string, FactItemWithFiscalsNumeric>>()
-	private readonly factsAnnaulByYearByPropertyName = new Map<string, Map<string, FactItemWithFiscalsNumeric>>()
+	public getSplits(params: { splitFacts: FactValue[] | FactItem[] }) {
+		const splitFacts = [...params.splitFacts].sort((a, b) => (a.end < b.end ? -1 : 1))
+		const YEAR_MS = 31_536_000_000
 
-	private readonly resolvedProperties = new Set<string>()
+		const splits: SplitData[] = []
+		let currentSplit: SplitData | null = null
 
-	private sortedSplits: SplitData[] | null = null
+		for (let i = 0; i < splitFacts.length; i++) {
+			const prevFact = splitFacts[i - 1]
+			const fact = splitFacts[i]
 
-	private getMap(map: Map<string, Map<string, FactItemWithFiscalsNumeric>>, propertyName: string) {
-		return map.get(propertyName) ?? map.set(propertyName, new Map()).get(propertyName)!
-	}
-	private filedFirstLastBySplitKey = new Map<string, { firstFiled: string; lastFiled: string }>()
+			const factValue = Number((fact as FactItem).value ?? (fact as FactValue).val)
+			const factValuePrev = Number((prevFact as FactItem)?.value ?? (prevFact as FactValue)?.val)
+			const isSameSplitLaterFiling =
+				factValue === factValuePrev && new Date(fact.end).getTime() - new Date(prevFact.end).getTime() < YEAR_MS
 
-	public add(fact: FactItemWithFiscalsNumeric & { filedLast?: string }) {
-		const { name: propertyName, year, fiscalPeriod, unit, filed, value, end } = fact
+			if (!isSameSplitLaterFiling && currentSplit) {
+				splits.push(currentSplit)
+				currentSplit = null
+			}
 
-		if (this.isSplitProperty(propertyName)) {
-			this.addSplitData({ end, filed, fiscalYear: year, value: Number(value), fiscalPeriod })
-			return
+			if (!currentSplit) {
+				currentSplit = {
+					endFirst: fact.end,
+					endLast: fact.end,
+					filedFirst: fact.filed,
+					filedLast: fact.filed,
+					splitRatio: factValue,
+				}
+			} else {
+				currentSplit.endFirst = fact.end < currentSplit.endFirst ? fact.end : currentSplit.endFirst
+				currentSplit.endLast = fact.end > currentSplit.endLast ? fact.end : currentSplit.endLast
+				currentSplit.filedFirst = fact.filed < currentSplit.filedFirst ? fact.filed : currentSplit.filedFirst
+				currentSplit.filedLast = fact.filed > currentSplit.filedLast ? fact.filed : currentSplit.filedLast
+			}
 		}
 
-		if (!this.isSplitAdjustableUnit(unit)) return
-
-		if (this.resolvedProperties.has(propertyName)) {
-			throw new Error(`Property ${propertyName} has already been resolved`)
+		if (currentSplit) {
+			splits.push(currentSplit)
 		}
 
-		const isAnnual = fiscalPeriod === 'FY'
-		const map = isAnnual
-			? this.getMap(this.factsAnnaulByYearByPropertyName, propertyName)
-			: this.getMap(this.factsByYearQuarterByPropertyName, propertyName)
-
-		const key = `${year}_${fiscalPeriod}`
-
-		this.filedFirstLastBySplitKey.set(key, {
-			firstFiled: filed,
-			lastFiled: fact.filedLast ?? filed,
-		})
-
-		map.set(key, fact)
+		return splits
 	}
 
-	public getSplitsAsc() {
-		if (this.sortedSplits) return this.sortedSplits
-		const sortedSplits = Array.from(this.splitByFiscalYearAmount.values()).sort((a, b) =>
-			a.filed < b.filed ? -1 : 1,
-		)
-		this.sortedSplits = sortedSplits
-		return sortedSplits
+	public filterSplitFacts(params: { facts: FactItem[] }) {
+		const { facts } = params
+		return facts.filter((f) => f.name.endsWith(this.keySplit))
 	}
 
-	public isSplitProperty(propertyName: string) {
-		return propertyName === this.splitKey
+	public extractSplitsFromCompanyFacts(params: { companyFactList: Pick<CompanyFactListData, 'facts'> }) {
+		const { companyFactList } = params
+		const factsByName = companyFactList.facts['us-gaap'] ?? {}
+		return factsByName[this.keySplit]?.units.pure ?? []
 	}
 
-	public addSplitData(data: Omit<SplitData, 'firstFiled'>) {
-		const { end, filed, fiscalYear, value } = data
+	public getSplitsFromCompanyFacts(params: { companyFactList: Pick<CompanyFactListData, 'facts'> }) {
+		const { companyFactList } = params
 
-		const split = value
-		const key = `${fiscalYear}-${split}`
-		const prevSplit = this.splitByFiscalYearAmount.get(key)
+		const factsByName = companyFactList.facts['us-gaap'] ?? {}
+		const splitFacts = [...(factsByName[this.keySplit]?.units.pure ?? [])].sort((a, b) => (a.end < b.end ? -1 : 1))
 
-		if (!prevSplit) {
-			this.splitByFiscalYearAmount.set(key, { ...data, firstFiled: filed })
-			this.sortedSplits = null
-			return
+		const YEAR_MS = 31_536_000_000
+
+		const splits: SplitData[] = []
+		let currentSplit: SplitData | null = null
+
+		for (let i = 0; i < splitFacts.length; i++) {
+			const prevFact = splitFacts[i - 1]
+			const fact = splitFacts[i]
+
+			const isSameSplitLaterFiling =
+				fact.val === prevFact?.val && new Date(fact.end).getTime() - new Date(prevFact.end).getTime() < YEAR_MS
+
+			if (!isSameSplitLaterFiling && currentSplit) {
+				splits.push(currentSplit)
+				currentSplit = null
+			}
+
+			if (!currentSplit) {
+				currentSplit = {
+					endFirst: fact.end,
+					endLast: fact.end,
+					filedFirst: fact.filed,
+					filedLast: fact.filed,
+					splitRatio: Number(fact.val),
+				}
+			} else {
+				currentSplit.endFirst = fact.end < currentSplit.endFirst ? fact.end : currentSplit.endFirst
+				currentSplit.endLast = fact.end > currentSplit.endLast ? fact.end : currentSplit.endLast
+				currentSplit.filedFirst = fact.filed < currentSplit.filedFirst ? fact.filed : currentSplit.filedFirst
+				currentSplit.filedLast = fact.filed > currentSplit.filedLast ? fact.filed : currentSplit.filedLast
+			}
 		}
 
-		const curEnd = end
-		const curFiled = filed
-
-		const prevEnd = prevSplit.end
-		const prevFiled = prevSplit.filed
-
-		const shouldUpdateFactItem = !prevSplit || prevEnd < curEnd || (prevEnd === curEnd && prevFiled > curFiled)
-		const shouldUpdateFirstFiled = prevFiled > curFiled
-
-		if (shouldUpdateFactItem) {
-			const curData = this.splitByFiscalYearAmount.get(key) as SplitData
-			curData.end = end
-			curData.filed = filed
-			curData.value = value
-			curData.fiscalYear = fiscalYear
-			this.sortedSplits = null
+		if (currentSplit) {
+			splits.push(currentSplit)
 		}
 
-		if (shouldUpdateFirstFiled) {
-			const curData = this.splitByFiscalYearAmount.get(key) as SplitData
-			curData.firstFiled = curFiled
-			this.sortedSplits = null
-		}
+		return splits
 	}
 
-	/**
-	 * TODO: Find a more reliable way of checking if the split has already been applied.
-	 */
-	private didApplySplit(params: {
-		isShareRatio: boolean
-		nextFact: FactItemWithFiscalsNumeric | null
-		prevFact: FactItemWithFiscalsNumeric | null
-		fact: FactItemWithFiscalsNumeric
-		split: SplitData
-	}) {
-		const { isShareRatio, nextFact, prevFact, fact, split } = params
+	public didApplySplit(params: { isShareRatio: boolean; split: SplitData; factGroup: FactGroup }) {
+		const { isShareRatio, factGroup, split } = params
+		const splitVal = split.splitRatio
+		if (!splitVal) return true
 
-		const { firstFiled, lastFiled } =
-			this.filedFirstLastBySplitKey.get(`${split.fiscalYear}_${split.fiscalPeriod}`) ?? {}
-
-		if (fact.filed > lastFiled!) {
+		if (factGroup.filedFirst > split.filedLast) {
 			return true
 		}
-
-		if (fact.filed < firstFiled!) {
+		if (factGroup.filedLast < split.filedFirst) {
 			return false
 		}
 
-		const val = fact.value
-		const splitVal = split.value
-		const valWithSplit = isShareRatio ? splitVal * val : val / splitVal
-
-		if (nextFact) {
-			const difference = Math.abs(nextFact.value - val)
-			const differenceSplit = Math.abs(nextFact.value - valWithSplit)
-			return difference < differenceSplit
+		if (factGroup.valuePeriodLast !== null) {
+			const val = factGroup.valuePeriodResolved ?? 0
+			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
+			return Math.abs(factGroup.valuePeriodLast - val) < Math.abs(factGroup.valuePeriodLast - valueWithSplit)
 		}
 
-		if (prevFact) {
-			const difference = Math.abs(prevFact.value - val)
-			const differenceSplit = Math.abs(prevFact.value - valWithSplit)
-			return difference < differenceSplit
+		if (factGroup.valueTrailingLast !== null) {
+			const val = factGroup.valueTrailingResolved ?? 0
+			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
+			return Math.abs(factGroup.valueTrailingLast - val) < Math.abs(factGroup.valueTrailingLast - valueWithSplit)
 		}
 
-		return false
+		return true
 	}
 
-	public isSplitAdjustableUnit(unit: string) {
-		return unit.toLowerCase().includes('share')
-	}
+	public adjustForSplits(params: { factGroups: FactGroup[]; splits: SplitData[] }) {
+		const { factGroups, splits } = params
 
-	public isShareRatioUnit(unit: string) {
-		const unitLower = unit.toLowerCase()
-		return unitLower !== 'shares' && unitLower.includes('share') // ex: USD/shares or USD-per-share
-	}
+		for (const factGroup of factGroups) {
+			const unitLower = factGroup.unit.toLowerCase()
+			if (!unitLower.includes('share')) continue
 
-	private getSortedFacts(propertyName: string, isAnnual: boolean) {
-		const bucket = isAnnual ? this.factsAnnaulByYearByPropertyName : this.factsByYearQuarterByPropertyName
-		const facts = Array.from(bucket.get(propertyName)?.values() ?? [])
-		return facts.sort((a, b) => (a.filed < b.filed ? -1 : 1)) ?? []
-	}
+			const isShareRatio = unitLower !== 'shares'
 
-	public resolveProperty(propertyName: string) {
-		if (this.resolvedProperties.has(propertyName)) return
+			for (const split of splits) {
+				if (this.didApplySplit({ factGroup, split, isShareRatio })) continue
+				const factValuePeriod = factGroup.valueSplitAdjustedPeriod ?? factGroup.valuePeriodResolved ?? 0
+				const factValueTrailing = factGroup.valueSplitAdjustedTrailing ?? factGroup.valueTrailingResolved ?? 0
+				const splitValue = split.splitRatio
 
-		const factsAscQuarter = this.getSortedFacts(propertyName, false)
-		const factsAscAnnual = this.getSortedFacts(propertyName, true)
+				if (!splitValue) continue
 
-		this.adjustValuesForSplits({ facts: factsAscQuarter })
-		this.adjustValuesForSplits({ facts: factsAscAnnual })
+				factGroup.valueSplitAdjustedPeriod = isShareRatio
+					? factValuePeriod / splitValue
+					: factValuePeriod * splitValue
 
-		this.resolvedProperties.add(propertyName)
-	}
-
-	public get(propertyName: string, year: number, fiscalPeriod: FiscalPeriod) {
-		this.resolveProperty(propertyName)
-		const key = `${year}_${fiscalPeriod}`
-		const isAnnual = fiscalPeriod === 'FY'
-		const bucket = isAnnual ? this.factsAnnaulByYearByPropertyName : this.factsByYearQuarterByPropertyName
-		const fact = bucket.get(propertyName)?.get(key)
-		return fact?.value
-	}
-
-	public forEach(
-		callback: (params: { propertyName: string; year: number; fiscalPeriod: FiscalPeriod; value: number }) => void,
-	) {
-		this.factsByYearQuarterByPropertyName.forEach((factsByYearQuarter, propertyName) => {
-			this.resolveProperty(propertyName)
-			factsByYearQuarter.forEach((fact, key) => {
-				const [year, fiscalPeriod] = key.split('_') as [string, FiscalPeriod]
-				callback({ propertyName, year: Number(year), fiscalPeriod, value: Number(fact.value) })
-			})
-		})
-
-		this.factsAnnaulByYearByPropertyName.forEach((factsByYear, propertyName) => {
-			this.resolveProperty(propertyName)
-			factsByYear.forEach((fact, key) => {
-				const [year, fiscalPeriod] = key.split('_') as [string, FiscalPeriod]
-				callback({ propertyName, year: Number(year), fiscalPeriod, value: Number(fact.value) })
-			})
-		})
-	}
-
-	private adjustValuesForSplits(params: { facts: FactItemWithFiscalsNumeric[] }) {
-		const { facts } = params
-		const splits = this.getSplitsAsc()
-
-		if (facts.length === 0 || splits.length === 0) return
-
-		const isShareRatio = this.isShareRatioUnit(facts[0].unit)
-
-		for (let splitIndex = splits.length - 1; splitIndex >= 0; splitIndex--) {
-			const split = splits[splitIndex]
-
-			for (let factIndex = facts.length - 1; factIndex >= 0; factIndex--) {
-				const fact = facts[factIndex]
-				const { value, filed } = fact
-
-				const nextFact = facts[factIndex + 1] ?? null
-				const prevFact = facts[factIndex - 1] ?? null
-				// const nextValue = facts[factIndex + 1]?.value ?? null
-				// const prevValue = facts[factIndex - 1]?.value ?? null
-
-				const didApplySplit = this.didApplySplit({
-					// filed,
-					isShareRatio,
-					// nextValue,
-					// prevValue,
-					fact,
-					nextFact,
-					prevFact,
-					split,
-					// value,
-				})
-
-				if (didApplySplit || !split.value) {
-					continue
-				}
-
-				if (isShareRatio) {
-					fact.value /= split.value
-				} else {
-					fact.value *= split.value
-				}
+				factGroup.valueSplitAdjustedTrailing = isShareRatio
+					? factValueTrailing / splitValue
+					: factValueTrailing * splitValue
 			}
 		}
 	}

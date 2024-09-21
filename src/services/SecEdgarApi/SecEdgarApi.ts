@@ -21,6 +21,10 @@ import ReportWrapper from '../ReportParser/ReportWrapper'
 import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
 
+interface BuildReportsByAccn {
+	[accn: string]: ReportRaw
+}
+
 interface SecApiArgs {
 	throttler: IThrottler
 	client: IClient
@@ -43,11 +47,20 @@ export interface GetSymbolParams {
 	symbol: string | number
 }
 
-export interface GetReportsParams {
+export interface GetReportsRawParams {
+	symbol: string | number
+	includeNamePrefix?: boolean
+	adjustForSplits?: boolean
+	resolvePeriodValues?: boolean
+}
+
+export interface GetReportsParams extends Omit<GetReportsRawParams, 'includeNamePrefix'> {
 	/** symbol or cik */
 	symbol: string | number
 	withWrapper?: boolean
 	usePropertyResolver?: boolean
+	adjustForSplits?: boolean
+	resolvePeriodValues?: boolean
 }
 
 export interface GetFactParams {
@@ -263,9 +276,9 @@ export default class SecEdgarApi {
 	public async getReports<T extends GetReportsParams>(
 		params: T,
 	): Promise<T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]> {
-		const { symbol, withWrapper = false, usePropertyResolver = true } = params
-		const facts = await this.getFacts({ symbol })
-		const reports = this.reportParser.parseReports(facts, usePropertyResolver)
+		const { withWrapper = false, usePropertyResolver = true } = params
+		const reportsRaw = await this.getReportsRaw({ ...params, includeNamePrefix: false })
+		const reports = this.reportParser.parseReportsFromRaw(reportsRaw, usePropertyResolver)
 		return withWrapper ? reports : (reports.map((report) => report.getReport()) as any)
 	}
 
@@ -273,9 +286,15 @@ export default class SecEdgarApi {
 	 * Parses reports from company facts. Calculates missing properties and uses a single interface
 	 * for all reports.
 	 */
-	public async getReportsRaw(params: GetSymbolParams): Promise<ReportRaw[]> {
-		const facts = await this.getFacts(params)
-		return this.reportParser.parseReportsRaw(facts)
+	public async getReportsRaw(params: GetReportsRawParams): Promise<ReportRaw[]> {
+		const { symbol, includeNamePrefix = false, adjustForSplits = true, resolvePeriodValues = true } = params
+		const companyFacts = await this.getFacts({ symbol })
+		const reports = this.reportParser.parseReportsRaw(companyFacts, {
+			adjustForSplits,
+			resolvePeriodValues,
+			includeNamePrefix,
+		})
+		return reports
 	}
 
 	/**

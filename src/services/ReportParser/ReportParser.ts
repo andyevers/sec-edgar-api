@@ -1,12 +1,13 @@
 import { CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
 import _keyTranslator from '../../util/key-translations'
+import ReportBuilder from '../ReportBuilder'
 import ReportRawResolvable from '../ReportBuilder/ReportRawResolvable'
+import { GetReportsParams, GetReportsRawParams } from '../SecEdgarApi'
 import PropertyResolver from './PropertyResolver'
-import ReportRawParser from './ReportRawParser'
 import ReportWrapper from './ReportWrapper'
 
 interface ReportParserArgs {
-	reportRawParser?: ReportRawParser
+	reportBuilder?: ReportBuilder
 	propertyResolver?: PropertyResolver
 	keyTranslator?: Record<string, string[]>
 }
@@ -21,31 +22,19 @@ type TranslateRawReportsCallback<T> = (
  * Takes company facts data from the SEC and translates them to reports as json objects.
  */
 export default class ReportParser {
-	private readonly reportRawParser: ReportRawParser
 	private readonly keyTranslator: Record<string, string[]>
 	private readonly propertyResolver: PropertyResolver
+	private readonly reportBuilder: ReportBuilder
 
 	constructor(args?: ReportParserArgs) {
 		const {
-			reportRawParser = new ReportRawParser(),
 			propertyResolver = new PropertyResolver(),
+			reportBuilder = new ReportBuilder(),
 			keyTranslator = _keyTranslator,
 		} = args ?? {}
-		this.reportRawParser = reportRawParser
 		this.keyTranslator = keyTranslator
 		this.propertyResolver = propertyResolver
-	}
-
-	/**
-	 * translates company facts to ReportTranslated. To translate to custom report, use parseReportsRaw and translateReportsRaw
-	 *
-	 * This includes only 10-K and 10-Q annual and quarterly reports. To include all reports, use parseReportsRaw
-	 *
-	 * @param companyFactListData This is the json file contents of CIK[number].json file from the SEC website. You can find these using their API or by downloading the companyfacts.zip file: https://www.sec.gov/edgar/sec-api-documentation
-	 */
-	public parseReports(companyFactListData: CompanyFactListData, usePropertyResolver = true): ReportWrapper[] {
-		const reportsRaw = this.reportRawParser.parseReports(companyFactListData)
-		return this.parseReportsFromRaw(reportsRaw, usePropertyResolver)
+		this.reportBuilder = reportBuilder
 	}
 
 	/**
@@ -73,12 +62,21 @@ export default class ReportParser {
 	}
 
 	/**
-	 * Note that this includes all reports by default, not just annual and quarterly. use options.reportsToInclude to filter
+	 * Parse raw reports
 	 *
 	 * @see https://www.sec.gov/edgar/sec-api-documentation
 	 */
-	public parseReportsRaw(companyFactListData: CompanyFactListData): ReportRaw[] {
-		return this.reportRawParser.parseReports(companyFactListData)
+	public parseReportsRaw(
+		companyFactListData: CompanyFactListData,
+		options: Omit<GetReportsRawParams, 'symbol'> = {},
+	): ReportRaw[] {
+		const { adjustForSplits, resolvePeriodValues, includeNamePrefix } = options
+		const { facts } = this.reportBuilder.createFacts(companyFactListData, includeNamePrefix)
+		return this.reportBuilder.buildReports({
+			facts,
+			adjustForSplits,
+			resolvePeriodValues,
+		})
 	}
 
 	/**
