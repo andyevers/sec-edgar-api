@@ -1,6 +1,8 @@
 import { FiscalPeriod } from '../../types/report-raw.type'
 import ReportRawResolvable from './ReportRawResolvable'
 
+type TrippleNestedMap<T> = Map<number, Map<string, Map<number, T>>>
+
 /**
  * Resolves quarterly and annual values for a property. This is because filers provide total values for the
  * current fiscal year, rather than values for the individual quarters
@@ -8,13 +10,13 @@ import ReportRawResolvable from './ReportRawResolvable'
  */
 export default class FactPeriodResolver {
 	/** Values for each quarter [numQ1, numQ2, numQ3, numQ4] */
-	private readonly valueByQuarterByPropertyByYear = new Map<number, Map<string, Map<number, number>>>()
+	private readonly valueByQuarterByPropertyByYear: TrippleNestedMap<number> = new Map()
 
 	/** Same as by quarter but string values */
-	private readonly valueByQuarterByPropertyByYearString = new Map<number, Map<string, Map<number, string>>>()
+	private readonly valueByQuarterByPropertyByYearString: TrippleNestedMap<string> = new Map()
 
 	/** Value sums (each includes sum of previous quarter). last el used for annual report. [sumQ1, sumQ2, sumQ3, sumFY] */
-	private readonly sumByQuarterByPropertyByYear = new Map<number, Map<string, Map<number, number>>>()
+	private readonly sumByQuarterByPropertyByYear: TrippleNestedMap<number> = new Map()
 
 	/** Which properties have a range that need to be resolved to get quarterly value */
 	private readonly propertiesResolvableByYear = new Map<number, Set<string>>()
@@ -25,11 +27,28 @@ export default class FactPeriodResolver {
 	/** prevent values from being added multiple times */
 	private readonly resolvedValues = new Set<string>()
 
-	private readonly cik: number
+	private readonly unresolvedReports = new Map<string, ReportRawResolvable>()
 
-	constructor(args: { cik: number }) {
-		const { cik } = args
+	private readonly cik: number
+	private readonly preferOriginalFilingValues: boolean
+
+	constructor(args: { cik: number; preferOriginalFilingValues?: boolean }) {
+		const { cik, preferOriginalFilingValues = false } = args
 		this.cik = cik
+		this.preferOriginalFilingValues = preferOriginalFilingValues
+	}
+
+	/**
+	 * Used to check if this should potentially overwrite a value that has already been set.
+	 */
+	private isPreferredValue(params: {
+		bucket: Map<number, number | string>
+		bucketIndex: number
+		end: string
+		filed: string
+	}) {
+		const { bucket, end, filed, bucketIndex } = params
+		return !bucket.has(bucketIndex) || this.preferOriginalFilingValues || !this.isOriginalFiling({ end, filed })
 	}
 
 	private getOrSetBucketArr<T extends string | number>(
@@ -103,7 +122,13 @@ export default class FactPeriodResolver {
 		return { bucketQuarter, bucketSum, bucketString }
 	}
 
-	public getPeriod(params: { start?: string; end: string }) {
+	/**
+	 * 0, 3, 6, 9, or 12 month period. 0 is instantaneous data that doesn't have a time period, (ex: assets)
+	 * other facts have values that are for a period of time. (like revenue over the last 6 months).
+	 *
+	 * Use periods 0 and 3 for quarterly reports and 0 and 12 for annual reports.
+	 */
+	public static getPeriod(params: { start?: string; end: string }) {
 		const { start, end } = params
 
 		if (!start || start === end) return 0
@@ -114,6 +139,10 @@ export default class FactPeriodResolver {
 		if (differenceDays < 225) return 6
 		if (differenceDays < 315) return 9
 		return 12
+	}
+
+	public getPeriod(params: { start?: string; end: string }) {
+		return FactPeriodResolver.getPeriod(params)
 	}
 
 	private getOrSetReport(params: { year: number; quarter: number }) {
@@ -140,7 +169,12 @@ export default class FactPeriodResolver {
 		return report
 	}
 
-	public isFiledRecent(params: { end: string; filed: string }) {
+	/**
+	 * True if the filed date is within 60 days of the end date. This indicates that it is likely
+	 * the original filing of the fact because filers are required to submit within 45 days of the
+	 * period end, and subsequent reports are filed 90 days apart.
+	 */
+	public isOriginalFiling(params: { end: string; filed: string }) {
 		const { end, filed } = params
 		const DAY_60_MS = 5_184_000_000
 		return new Date(filed).getTime() - new Date(end).getTime() < DAY_60_MS
@@ -157,15 +191,15 @@ export default class FactPeriodResolver {
 	}) {
 		const { year, value, name: propertyName, quarter, start, end, filed } = params
 
+		const bucketIndex = quarter - 1
 		const period = this.getPeriod({ start, end })
 
 		this.addPropertyByYear(this.propertiesByYear, year, propertyName)
 
-		const bucketIndex = quarter - 1
 		if (typeof value === 'string') {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYearString, year, propertyName)
 
-			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+			if (this.isPreferredValue({ bucket, bucketIndex, end, filed })) {
 				bucket.set(bucketIndex, value)
 			}
 			return
@@ -175,7 +209,7 @@ export default class FactPeriodResolver {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYear, year, propertyName)
 			const bucketSum = this.getOrSetBucketArr(this.sumByQuarterByPropertyByYear, year, propertyName)
 
-			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+			if (this.isPreferredValue({ bucket, bucketIndex, end, filed })) {
 				bucket.set(bucketIndex, value)
 				bucketSum.set(bucketIndex, value)
 			}
@@ -185,7 +219,7 @@ export default class FactPeriodResolver {
 		if (period === 3) {
 			const bucket = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYear, year, propertyName)
 
-			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+			if (this.isPreferredValue({ bucket, bucketIndex, end, filed })) {
 				bucket.set(bucketIndex, value)
 			}
 		}
@@ -193,15 +227,13 @@ export default class FactPeriodResolver {
 		if (quarter === 1 || period > 3) {
 			const bucket = this.getOrSetBucketArr(this.sumByQuarterByPropertyByYear, year, propertyName)
 
-			if (!bucket.has(bucketIndex) || this.isFiledRecent({ end, filed })) {
+			if (this.isPreferredValue({ bucket, bucketIndex, end, filed })) {
 				bucket.set(bucketIndex, value)
 			}
 		}
 
 		this.addPropertyByYear(this.propertiesResolvableByYear, year, propertyName)
 	}
-
-	private readonly unresolvedReports = new Map<string, ReportRawResolvable>()
 
 	private buildUnresolvedReports() {
 		this.propertiesByYear.forEach((properties, year) => {
@@ -262,6 +294,7 @@ export default class FactPeriodResolver {
 					const valueTrailing = bucketSum.get(i)
 					const value = (isAnnual ? bucketSum.get(3) : bucketQuarter.get(i)) ?? bucketString.get(i)
 					const quarter = i + 1
+
 					callback({
 						year,
 						fiscalPeriod: `Q${quarter}` as FiscalPeriod,

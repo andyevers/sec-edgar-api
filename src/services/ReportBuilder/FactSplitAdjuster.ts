@@ -1,7 +1,24 @@
 import { CompanyFactListData, FactGroup, FactItem, FactValue, SplitData } from '../../types'
+import FactPeriodResolver from './FactPeriodResolver'
 
+/**
+ * Splits can be filed multiple times throughout different reports. There is no clear
+ * indication on when the split is executed or what facts the split has been applied to. This
+ * class tries to determine which splits have been applied and which need to be adjusted for
+ * each fact.
+ */
 export default class FactSplitAdjuster {
 	private readonly keySplit = 'StockholdersEquityNoteStockSplitConversionRatio1'
+
+	private preferFirstValue = true
+
+	private getGroupValue(factGroup: FactGroup, isTrailing: boolean) {
+		if (isTrailing) {
+			return Number(this.preferFirstValue ? factGroup.valueTrailingFirst : factGroup.valueTrailingLast)
+		} else {
+			return Number(this.preferFirstValue ? factGroup.valuePeriodFirst : factGroup.valuePeriodLast)
+		}
+	}
 
 	public getSplits(params: { splitFacts: FactValue[] | FactItem[] }) {
 		const splitFacts = [...params.splitFacts].sort((a, b) => (a.end < b.end ? -1 : 1))
@@ -73,6 +90,9 @@ export default class FactSplitAdjuster {
 			const prevFact = splitFacts[i - 1]
 			const fact = splitFacts[i]
 
+			// Assume the split is executed within the first year of the first filing...
+			// sometimes a company will file the split fact mentioning that they plan on executing it later in the fiscal year
+			// (ex: when Google did their 20:1 split in July of 2020)
 			const isSameSplitLaterFiling =
 				fact.val === prevFact?.val && new Date(fact.end).getTime() - new Date(prevFact.end).getTime() < YEAR_MS
 
@@ -104,11 +124,51 @@ export default class FactSplitAdjuster {
 		return splits
 	}
 
-	public didApplySplit(params: { isShareRatio: boolean; split: SplitData; factGroup: FactGroup }) {
-		const { isShareRatio, factGroup, split } = params
+	/**
+	 * Returns true if the fact value was adjusted, false if it was not,
+	 * and null if the comparison does not match the split
+	 */
+	private isAdjustedFromComparedFact(params: {
+		factValue: number
+		factCompare: FactItem | null
+		isShareRatio: boolean
+		splitVal: number
+	}) {
+		const { factCompare, factValue, isShareRatio, splitVal } = params
+
+		const minValue = Math.min(factValue, Number(factCompare?.value ?? factValue))
+		const maxValue = Math.max(factValue, Number(factCompare?.value ?? factValue))
+
+		const possiblePreSplitValue = isShareRatio ? maxValue : minValue
+		const possiblePostSplitValue = isShareRatio ? minValue : maxValue
+
+		const expectedPostSplitValue = isShareRatio
+			? possiblePreSplitValue / splitVal
+			: possiblePreSplitValue * splitVal
+
+		const nearnessThreshold = 0.01
+
+		const isSplitAdjustment = Math.abs(expectedPostSplitValue - possiblePostSplitValue) < nearnessThreshold
+
+		return isSplitAdjustment ? possiblePostSplitValue === factValue : null
+	}
+
+	/**
+	 * Splits can be filed multiple times throughout different reports.
+	 */
+	public didApplySplit(params: {
+		isShareRatio: boolean
+		split: SplitData
+		factGroup: FactGroup
+		isTrailing: boolean
+		useOppositePeriodFallback?: boolean
+	}): boolean {
+		const { isShareRatio, factGroup, split, isTrailing, useOppositePeriodFallback = true } = params
 		const splitVal = split.splitRatio
+
 		if (!splitVal) return true
 
+		// these first two criteria will take care of the majority of cases...
 		if (factGroup.filedFirst > split.filedLast) {
 			return true
 		}
@@ -116,14 +176,56 @@ export default class FactSplitAdjuster {
 			return false
 		}
 
+		const resolvedFact = factGroup.facts.find((f) =>
+			isTrailing ? f.value === factGroup.valueTrailingFirst : f.value === factGroup.valuePeriodFirst,
+		)
+
+		if (!resolvedFact && useOppositePeriodFallback) {
+			return this.didApplySplit({ ...params, isTrailing: !isTrailing, useOppositePeriodFallback: false })
+		}
+
+		const refiledFacts = factGroup.facts.filter((f) => {
+			const period = FactPeriodResolver.getPeriod(f)
+			const isSamePeriod = isTrailing ? period === 0 || period > 3 : period <= 3
+			return f !== resolvedFact && isSamePeriod
+		})
+
+		// check if one of the filed facts is the split adjustment
+		for (const fact of refiledFacts) {
+			const isAdjusted = this.isAdjustedFromComparedFact({
+				factCompare: fact,
+				factValue: Number(resolvedFact?.value),
+				isShareRatio,
+				splitVal,
+			})
+
+			if (isAdjusted !== null) {
+				return isAdjusted
+			}
+		}
+
+		if (resolvedFact?.filed! > split.filedLast) {
+			return true
+		}
+
+		if (resolvedFact?.filed! < split.filedFirst) {
+			return false
+		}
+
+		// // if the filed date of the fact overlaps with the filed date of the split, try comparing the end dates
+		if (factGroup.endLast < split.endFirst && factGroup.values.length === 1) {
+			return false
+		}
+
+		// if we still don't know, see if the split value puts us closer to the last known value or further
 		if (factGroup.valuePeriodLast !== null) {
-			const val = factGroup.valuePeriodResolved ?? 0
+			const val = this.getGroupValue(factGroup, isTrailing)
 			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
 			return Math.abs(factGroup.valuePeriodLast - val) < Math.abs(factGroup.valuePeriodLast - valueWithSplit)
 		}
 
 		if (factGroup.valueTrailingLast !== null) {
-			const val = factGroup.valueTrailingResolved ?? 0
+			const val = this.getGroupValue(factGroup, isTrailing)
 			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
 			return Math.abs(factGroup.valueTrailingLast - val) < Math.abs(factGroup.valueTrailingLast - valueWithSplit)
 		}
@@ -141,20 +243,24 @@ export default class FactSplitAdjuster {
 			const isShareRatio = unitLower !== 'shares'
 
 			for (const split of splits) {
-				if (this.didApplySplit({ factGroup, split, isShareRatio })) continue
-				const factValuePeriod = factGroup.valueSplitAdjustedPeriod ?? factGroup.valuePeriodResolved ?? 0
-				const factValueTrailing = factGroup.valueSplitAdjustedTrailing ?? factGroup.valueTrailingResolved ?? 0
+				const factValuePeriod = this.getGroupValue(factGroup, false)
+				const factValueTrailing = this.getGroupValue(factGroup, true)
 				const splitValue = split.splitRatio
 
 				if (!splitValue) continue
 
-				factGroup.valueSplitAdjustedPeriod = isShareRatio
-					? factValuePeriod / splitValue
-					: factValuePeriod * splitValue
+				// ratios (like EPS) get divided by splits, share counts get multiplied (like shares outstanding).
+				if (!this.didApplySplit({ factGroup, split, isShareRatio, isTrailing: false })) {
+					factGroup.valueSplitAdjustedPeriod = isShareRatio
+						? factValuePeriod / splitValue
+						: factValuePeriod * splitValue
+				}
 
-				factGroup.valueSplitAdjustedTrailing = isShareRatio
-					? factValueTrailing / splitValue
-					: factValueTrailing * splitValue
+				if (!this.didApplySplit({ factGroup, split, isShareRatio, isTrailing: true })) {
+					factGroup.valueSplitAdjustedTrailing = isShareRatio
+						? factValueTrailing / splitValue
+						: factValueTrailing * splitValue
+				}
 			}
 		}
 	}

@@ -45,28 +45,19 @@ export default class ReportBuilder {
 		const fiscalCalculator = this.createFiscalCalculator({ facts })
 
 		const factGrouper = new FactGrouper()
+		const factSplitAdjuster = new FactSplitAdjuster()
+		// if splits not included in params and need to adjust, extract from facts
+		const splits = adjustForSplits
+			? splitsProp ?? factSplitAdjuster.getSplits({ splitFacts: factSplitAdjuster.filterSplitFacts({ facts }) })
+			: splitsProp
 
 		const { factGroupsByReportKey, maxYear, minYear } = factGrouper.buildFactGroupsByReportKey({
 			facts,
 			cik: reportsCik,
 			fiscalCalculator,
 			resolvePeriodValues,
+			splits,
 		})
-
-		const factSplitAdjuster = new FactSplitAdjuster()
-
-		// if splits not included in params and need to adjust, extract from facts
-		const splits = adjustForSplits
-			? splitsProp ?? factSplitAdjuster.getSplits({ splitFacts: factSplitAdjuster.filterSplitFacts({ facts }) })
-			: splitsProp
-
-		if (adjustForSplits) {
-			// mutates factGroups to adjust for splits
-			factSplitAdjuster.adjustForSplits({
-				factGroups: Array.from(factGroupsByReportKey.values()).flat(),
-				splits: splits ?? [],
-			})
-		}
 
 		return this.buildReportsFromGroups({
 			factGroupsByReportKey,
@@ -157,7 +148,7 @@ export default class ReportBuilder {
 			})
 
 			for (const group of groups) {
-				const value = group.valueSplitAdjustedPeriod ?? group.valuePeriodResolved ?? group.valuePeriodFirst ?? 0
+				const value = group.valuePeriodResolved ?? group.valuePeriodFirst ?? 0
 				reportPeriod[group.name] = this.round(value)
 			}
 
@@ -175,8 +166,7 @@ export default class ReportBuilder {
 			const reportKeyAnnual = `${reportAnnual.fiscalYear}_${reportAnnual.fiscalPeriod}`
 
 			for (const group of groups) {
-				const value =
-					group.valueSplitAdjustedTrailing ?? group.valueTrailingResolved ?? group.valueTrailingFirst ?? 0
+				const value = group.valueTrailingResolved ?? group.valueTrailingFirst ?? 0
 				reportAnnual[group.name] = this.round(value)
 			}
 

@@ -1,12 +1,14 @@
-import { FactItem, FactGroup } from '../../types'
+import { FactItem, FactGroup, SplitData } from '../../types'
 import FactFiscalCalculator from './FactFiscalCalculator'
 import FactPeriodResolver from './FactPeriodResolver'
+import FactSplitAdjuster from './FactSplitAdjuster'
 
 /**
  * There are many facts properties for the same period but filed at different times.
  * This groups those together and resolves the period and trailing values for each group.
  */
 export default class FactGrouper {
+	private preferFirstValue = true
 	private createFactGroup(params: Partial<FactGroup>): FactGroup {
 		return {
 			name: '',
@@ -41,17 +43,32 @@ export default class FactGrouper {
 	}
 
 	/**
+	 * Some properties have a start and end that represent a period average, rather than a period total.
+	 * These properties should be treated as instantaneous properties, meaning
+	 * the value for Q4 and FY should be the same.
+	 *
+	 * I believe the only properties like this are share related:
+	 * us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding and us-gaap:WeightedAverageNumberOfSharesOutstandingBasic.
+	 * May need to update this in the future if there are more
+	 */
+	private isAverageShares(params: { propertyName: string }) {
+		const { propertyName } = params
+		return propertyName.includes('WeightedAverage') && propertyName.includes('SharesOutstanding')
+	}
+
+	/**
 	 * Map structure { 2022_Q3: { name: ... } }. NOTE: Does not include fiscal year report key.
 	 * All groups contain both trailing and period values, so use trailing from Q4 to get FY values.
 	 */
 	public buildFactGroupsByReportKey(params: {
 		facts: FactItem[]
+		splits?: SplitData[]
 		cik: number
 		fiscalCalculator: FactFiscalCalculator
 		resolvePeriodValues: boolean
 		generateMissingGroups?: boolean
 	}) {
-		const { facts, cik, fiscalCalculator, resolvePeriodValues, generateMissingGroups = false } = params
+		const { facts, cik, fiscalCalculator, resolvePeriodValues, generateMissingGroups = false, splits } = params
 
 		// min and max year will be used to sort the reports
 		let minYear = 0
@@ -59,6 +76,7 @@ export default class FactGrouper {
 
 		const factGroupByKey = new Map<string, FactGroup>()
 		const periodResolver = new FactPeriodResolver({ cik })
+		const factSplitAdjuster = new FactSplitAdjuster()
 
 		// used for groups that need to be generated without using a fact
 		const unitByPropertyName = new Map<string, string>()
@@ -83,22 +101,11 @@ export default class FactGrouper {
 
 			const factValue = Number(fact.value)
 
-			// add to the period resolver to resolve quarterly and trailing values
-			periodResolver.add({
-				quarter,
-				end: fact.end,
-				filed: fact.filed,
-				name: fact.name,
-				value: factValue,
-				year,
-				start: fact.start,
-			})
-
 			// if no group exists, create from fact
 			if (!factGroupByKey.has(groupKey)) {
 				const group = this.createFactGroup({
 					name: fact.name,
-					accn: periodResolver.isFiledRecent({ end: fact.end, filed: fact.filed }) ? fact.accn : '',
+					accn: periodResolver.isOriginalFiling({ end: fact.end, filed: fact.filed }) ? fact.accn : '',
 					unit: fact.unit,
 					reportEnd: reportEnd,
 					reportFiled: reportFiled,
@@ -127,12 +134,18 @@ export default class FactGrouper {
 			// if group already exists, update values
 			const group = factGroupByKey.get(groupKey)!
 
+			group.facts.push(fact)
+
 			group.endFirst = fact.end < group.endFirst ? fact.end : group.endFirst
 			group.endLast = fact.end > group.endLast ? fact.end : group.endLast
 			group.filedFirst = fact.filed < group.filedFirst ? fact.filed : group.filedFirst
 			group.filedLast = fact.filed > group.filedLast ? fact.filed : group.filedLast
 
-			if (!group.accn && periodResolver.isFiledRecent({ end: fact.end, filed: fact.filed })) {
+			if (!group.values.includes(factValue)) {
+				group.values.push(factValue)
+			}
+
+			if (!group.accn && periodResolver.isOriginalFiling({ end: fact.end, filed: fact.filed })) {
 				group.accn = fact.accn ?? ''
 				accnByFiled.set(fact.filed, group.accn)
 			}
@@ -156,7 +169,54 @@ export default class FactGrouper {
 			}
 		}
 
+		// adjust for splits
 		const factGroupsByReportKey = new Map<string, FactGroup[]>()
+		if (splits) {
+			factSplitAdjuster.adjustForSplits({
+				factGroups: Array.from(factGroupByKey.values()),
+				splits,
+			})
+		}
+
+		factGroupByKey.forEach((group) => {
+			// add to the period resolver to resolve quarterly and trailing values
+			const preferredValuePeriod = this.preferFirstValue ? group.valuePeriodLast : group.valuePeriodLast
+			const preferredValueTrailing = this.preferFirstValue ? group.valueTrailingFirst : group.valueTrailingLast
+
+			const selectedFactPeriod = group.facts.find((fact) => {
+				const period = FactPeriodResolver.getPeriod(fact)
+				return fact.value === preferredValuePeriod && period <= 3
+			})
+
+			const selectedFactTrailing = group.facts.find((fact) => {
+				const period = FactPeriodResolver.getPeriod(fact)
+				return fact.value === preferredValueTrailing && (period > 3 || period === 0)
+			})
+
+			if (selectedFactPeriod) {
+				periodResolver.add({
+					end: selectedFactPeriod.end,
+					filed: selectedFactPeriod.filed,
+					name: selectedFactPeriod.name,
+					quarter: group.quarter,
+					value: Number(group.valueSplitAdjustedPeriod ?? preferredValuePeriod),
+					year: group.fiscalYear,
+					start: selectedFactPeriod.start,
+				})
+			}
+
+			if (selectedFactTrailing) {
+				periodResolver.add({
+					end: selectedFactTrailing.end,
+					filed: selectedFactTrailing.filed,
+					name: selectedFactTrailing.name,
+					quarter: group.quarter,
+					value: Number(group.valueSplitAdjustedTrailing ?? preferredValueTrailing),
+					year: group.fiscalYear,
+					start: selectedFactTrailing.start,
+				})
+			}
+		})
 
 		// Resolve quarterly and trailing values, and if no facts present for a certain period, create a group with resolved values.
 		periodResolver.forEach(({ propertyName, quarter, valueQuarter, valueTrailing, year }) => {
@@ -188,11 +248,13 @@ export default class FactGrouper {
 				})
 				factGroupByKey.set(groupKey, group)
 			} else if (resolvePeriodValues) {
-				group.valuePeriodResolved = valueQuarter
+				const shouldUseTrailingForQuarter =
+					this.isAverageShares({ propertyName: group.name }) && group.quarter === 4
+				group.valuePeriodResolved = shouldUseTrailingForQuarter ? valueTrailing : valueQuarter
 				group.valueTrailingResolved = valueTrailing
 
+				group.valuePeriodFirst ??= shouldUseTrailingForQuarter ? valueTrailing : valueQuarter
 				group.valueTrailingFirst ??= valueTrailing
-				group.valuePeriodFirst ??= valueQuarter
 			}
 
 			bucket.push(group!)
