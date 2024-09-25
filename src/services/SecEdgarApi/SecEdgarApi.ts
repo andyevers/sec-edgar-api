@@ -16,14 +16,9 @@ import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
 import DocumentParser from '../DocumentParser'
 import ReportParser from '../ReportParser'
-// import { ParseReportsOptions } from '../ReportParser/ReportRawParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
 import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
-
-interface BuildReportsByAccn {
-	[accn: string]: ReportRaw
-}
 
 interface SecApiArgs {
 	throttler: IThrottler
