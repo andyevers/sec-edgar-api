@@ -1,9 +1,9 @@
-import ReportBuilder from '../src/services/ReportBuilder'
+import ReportRawBuilder from '../src/services/ReportRawBuilder'
 import { factsAAPL } from './__fixtures__/facts-AAPL'
 import { factsGOOGL } from './__fixtures__/facts-GOOGL'
 
-describe('ReportBuilder', () => {
-	const reportBuilder = new ReportBuilder()
+describe('ReportRawBuilder', () => {
+	const reportBuilder = new ReportRawBuilder()
 
 	test('buildReports split adjusted EPS', () => {
 		const reportsAAPL = reportBuilder.buildReports(reportBuilder.createFacts(factsAAPL))

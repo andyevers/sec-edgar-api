@@ -22,7 +22,7 @@ interface BuildReportsParams {
 /**
  * Builds ReportRaw objects from company facts. Adjusts for splits and resolves period values.
  */
-export default class ReportBuilder {
+export default class ReportRawBuilder {
 	private readonly factRecordBuilder = new FactRecordBuilder()
 
 	public createFacts(companyFacts: CompanyFactListData, includeNamePrefix = false) {

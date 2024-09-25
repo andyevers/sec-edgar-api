@@ -1,12 +1,12 @@
 import { CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
 import _keyTranslator from '../../util/key-translations'
-import ReportBuilder from '../ReportBuilder'
+import ReportRawBuilder from '../ReportRawBuilder'
 import { GetReportsRawParams } from '../SecEdgarApi'
 import PropertyResolver from './PropertyResolver'
 import ReportWrapper from './ReportWrapper'
 
 interface ReportParserArgs {
-	reportBuilder?: ReportBuilder
+	reportBuilder?: ReportRawBuilder
 	propertyResolver?: PropertyResolver
 	keyTranslator?: Record<string, string[]>
 }
@@ -23,12 +23,12 @@ type TranslateRawReportsCallback<T> = (
 export default class ReportParser {
 	private readonly keyTranslator: Record<string, string[]>
 	private readonly propertyResolver: PropertyResolver
-	private readonly reportBuilder: ReportBuilder
+	private readonly reportBuilder: ReportRawBuilder
 
 	constructor(args?: ReportParserArgs) {
 		const {
 			propertyResolver = new PropertyResolver(),
-			reportBuilder = new ReportBuilder(),
+			reportBuilder = new ReportRawBuilder(),
 			keyTranslator = _keyTranslator,
 		} = args ?? {}
 		this.keyTranslator = keyTranslator
