@@ -68,6 +68,7 @@ export default class ReportRawBuilder {
 			cik: reportsCik,
 			fiscalCalculator,
 			resolvePeriodValues,
+			generateMissingGroups: false,
 			splits,
 		})
 

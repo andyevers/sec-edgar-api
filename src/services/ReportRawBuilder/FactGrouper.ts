@@ -43,20 +43,6 @@ export default class FactGrouper {
 	}
 
 	/**
-	 * Some properties have a start and end that represent a period average, rather than a period total.
-	 * These properties should be treated as instantaneous properties, meaning
-	 * the value for Q4 and FY should be the same.
-	 *
-	 * I believe the only properties like this are share related:
-	 * us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding and us-gaap:WeightedAverageNumberOfSharesOutstandingBasic.
-	 * May need to update this in the future if there are more
-	 */
-	private isAverageShares(params: { propertyName: string }) {
-		const { propertyName } = params
-		return propertyName.includes('WeightedAverage') && propertyName.includes('SharesOutstanding')
-	}
-
-	/**
 	 * Map structure { 2022_Q3: { name: ... } }. NOTE: Does not include fiscal year report key.
 	 * All groups contain both trailing and period values, so use trailing from Q4 to get FY values.
 	 */
@@ -249,7 +235,7 @@ export default class FactGrouper {
 				factGroupByKey.set(groupKey, group)
 			} else if (resolvePeriodValues) {
 				const shouldUseTrailingForQuarter =
-					this.isAverageShares({ propertyName: group.name }) && group.quarter === 4
+					FactPeriodResolver.isAverageShares({ propertyName: group.name }) && group.quarter === 4
 				group.valuePeriodResolved = shouldUseTrailingForQuarter ? valueTrailing : valueQuarter
 				group.valueTrailingResolved = valueTrailing
 

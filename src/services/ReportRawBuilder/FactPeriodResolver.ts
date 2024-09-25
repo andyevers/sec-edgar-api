@@ -38,6 +38,24 @@ export default class FactPeriodResolver {
 	}
 
 	/**
+	 * Some properties have a start and end that represent a period average, rather than a period total.
+	 * These properties should be treated as instantaneous properties, meaning
+	 * the value for Q4 and FY should be the same.
+	 *
+	 * I believe the only properties like this are share related:
+	 * us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding and us-gaap:WeightedAverageNumberOfSharesOutstandingBasic.
+	 * May need to update this in the future if there are more
+	 */
+	public static isAverageShares(params: { propertyName: string }) {
+		const { propertyName } = params
+		return propertyName.includes('WeightedAverage') && propertyName.includes('SharesOutstanding')
+	}
+
+	private isAverageShares(params: { propertyName: string }) {
+		return FactPeriodResolver.isAverageShares(params)
+	}
+
+	/**
 	 * Used to check if this should potentially overwrite a value that has already been set.
 	 */
 	private isPreferredValue(params: {
@@ -189,7 +207,7 @@ export default class FactPeriodResolver {
 		const { year, value, name: propertyName, quarter, start, end, filed } = params
 
 		const bucketIndex = quarter - 1
-		const period = this.getPeriod({ start, end })
+		const period = this.isAverageShares({ propertyName }) ? 0 : this.getPeriod({ start, end })
 
 		this.addPropertyByYear(this.propertiesByYear, year, propertyName)
 
