@@ -4,6 +4,24 @@ import FactGrouper from './FactGrouper'
 import FactRecordBuilder from './FactRecordBuilder'
 import FactSplitAdjuster from './FactSplitAdjuster'
 
+interface BuildReportsParams {
+	facts: FactItem[]
+	/**
+	 * for more accurate dates, add this. Otherwise, dates will be inferred
+	 * using the fact periods. The filing and report dates can be found in the SubmissionList (segEdgarApi.getSubmissions)
+	 */
+	reportDates?: SetReportDatesParams[]
+	/**
+	 * Splits will be extracted from facts if not provided.
+	 */
+	splits?: SplitData[]
+	resolvePeriodValues?: boolean
+	adjustForSplits?: boolean
+}
+
+/**
+ * Builds ReportRaw objects from company facts. Adjusts for splits and resolves period values.
+ */
 export default class ReportBuilder {
 	private readonly factRecordBuilder = new FactRecordBuilder()
 
@@ -22,13 +40,7 @@ export default class ReportBuilder {
 		return fiscalCalculator
 	}
 
-	public buildReports(params: {
-		facts: FactItem[]
-		reportDates?: SetReportDatesParams[]
-		splits?: SplitData[]
-		resolvePeriodValues?: boolean
-		adjustForSplits?: boolean
-	}) {
+	public buildReports(params: BuildReportsParams) {
 		const { facts, reportDates, splits: splitsProp, resolvePeriodValues = true, adjustForSplits = true } = params
 
 		if (facts.length === 0) {

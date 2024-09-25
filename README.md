@@ -149,6 +149,7 @@ Files for mapping & resolving properties:
 
 ### Resources
 
+-   XBRL Taxonomies: https://xbrl.us/xbrl-taxonomy/2024-us-gaap/
 -   Validate resolved values: https://finance.yahoo.com/
 -   Financial calculations: https://www.gurufocus.com/
 -   Calculate change in working capital: https://www.oldschoolvalue.com/stock-valuation/change-in-working-capital/

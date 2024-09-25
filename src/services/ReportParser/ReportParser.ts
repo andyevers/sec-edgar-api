@@ -1,8 +1,7 @@
 import { CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
 import _keyTranslator from '../../util/key-translations'
 import ReportBuilder from '../ReportBuilder'
-import ReportRawResolvable from '../ReportBuilder/ReportRawResolvable'
-import { GetReportsParams, GetReportsRawParams } from '../SecEdgarApi'
+import { GetReportsRawParams } from '../SecEdgarApi'
 import PropertyResolver from './PropertyResolver'
 import ReportWrapper from './ReportWrapper'
 
@@ -115,14 +114,12 @@ export default class ReportParser {
 		reportsRaw.forEach((report) => {
 			const reportNew: Record<string, string | number | null | boolean> = {}
 
-			const reportRaw = new ReportRawResolvable(report)
-
 			// iterate translation keys, ensuring same order and priority
 			for (const key in keyTranslations) {
 				const keysRaw = keyTranslations[key]
 				reportNew[key] = null
 				for (const keyRaw of keysRaw) {
-					const value = reportRaw.get(keyRaw)
+					const value = report[keyRaw]
 					if (value === undefined) continue
 					reportNew[key] = value
 					break
@@ -130,7 +127,7 @@ export default class ReportParser {
 			}
 
 			const reportFiltered = callback
-				? callback(reportNew as Parameters<C>[0], reportRaw.report, keyTranslations as Parameters<C>[2])
+				? callback(reportNew as Parameters<C>[0], report, keyTranslations as Parameters<C>[2])
 				: reportNew
 
 			reports.push(reportFiltered)

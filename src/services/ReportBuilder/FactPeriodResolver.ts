@@ -1,5 +1,4 @@
-import { FiscalPeriod } from '../../types/report-raw.type'
-import ReportRawResolvable from './ReportRawResolvable'
+import { FiscalPeriod, ReportRaw } from '../../types/report-raw.type'
 
 type TrippleNestedMap<T> = Map<number, Map<string, Map<number, T>>>
 
@@ -27,7 +26,7 @@ export default class FactPeriodResolver {
 	/** prevent values from being added multiple times */
 	private readonly resolvedValues = new Set<string>()
 
-	private readonly unresolvedReports = new Map<string, ReportRawResolvable>()
+	private readonly unresolvedReports = new Map<string, ReportRaw>()
 
 	private readonly cik: number
 	private readonly preferOriginalFilingValues: boolean
@@ -83,8 +82,8 @@ export default class FactPeriodResolver {
 			const unresolvedReport = this.unresolvedReports.get(reportKey)
 			const unresolvedReportPrev = this.unresolvedReports.get(`${year}_${i}`)
 
-			const sumValue = unresolvedReport?.getNumber(propertyName) ?? 0
-			const prevSum = unresolvedReportPrev?.getNumber(propertyName) ?? 0
+			const sumValue = unresolvedReport?.[propertyName] ?? 0
+			const prevSum = unresolvedReportPrev?.[propertyName] ?? 0
 
 			if (quarterValue === undefined) {
 				const bucketQuarter = this.getOrSetBucketArr(this.valueByQuarterByPropertyByYear, year, propertyName)
@@ -149,18 +148,16 @@ export default class FactPeriodResolver {
 		const { year, quarter } = params
 		const key = `${year}_${quarter}`
 
-		const report =
-			this.unresolvedReports.get(key) ??
-			new ReportRawResolvable({
-				cik: this.cik,
-				fiscalYear: year,
-				fiscalPeriod: quarter === 4 ? 'FY' : (`Q${quarter}` as FiscalPeriod),
-				dateReport: '',
-				dateFiled: '',
-				url: null,
-				splitDate: null,
-				splitRatio: null,
-			})
+		const report = this.unresolvedReports.get(key) ?? {
+			cik: this.cik,
+			fiscalYear: year,
+			fiscalPeriod: quarter === 4 ? 'FY' : (`Q${quarter}` as FiscalPeriod),
+			dateReport: '',
+			dateFiled: '',
+			url: null,
+			splitDate: null,
+			splitRatio: null,
+		}
 
 		if (!this.unresolvedReports.has(key)) {
 			this.unresolvedReports.set(key, report)
@@ -264,7 +261,7 @@ export default class FactPeriodResolver {
 					if (value === undefined) continue
 
 					const report = this.getOrSetReport({ year, quarter: i + 1 })
-					report.report[propertyName] = value
+					report[propertyName] = value
 				}
 			})
 		})
