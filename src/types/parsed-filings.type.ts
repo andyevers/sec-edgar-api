@@ -105,3 +105,5 @@ export interface FormDef14aData {
 	executiveCompensation: ExecutiveCompensation[]
 	holders: Holder[]
 }
+
+export type DailyFilingFormType = '10-K' | '10-Q' | '8-K' | '14' | '485' | 'S-8' | 'ALL'

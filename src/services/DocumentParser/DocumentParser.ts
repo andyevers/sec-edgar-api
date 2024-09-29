@@ -32,4 +32,8 @@ export default class DocumentParser {
 	public parseFormDef14a(params: XMLParams) {
 		return this.parsersByName.parseFormDef14a(params, this.parser)
 	}
+
+	public parseCurrentFilingsDaily(params: XMLParams) {
+		return this.parsersByName.parseCurrentFilingsDaily(params)
+	}
 }

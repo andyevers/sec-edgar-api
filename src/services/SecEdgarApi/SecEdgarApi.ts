@@ -2,6 +2,7 @@ import {
 	CompanyFactFrame,
 	CompanyFactListData,
 	CompanyTickerItem,
+	DailyFilingFormType,
 	FieldDataResponse,
 	Form10KData,
 	Form13GData,
@@ -273,13 +274,12 @@ export default class SecEdgarApi {
 	): Promise<T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]> {
 		const { withWrapper = false, usePropertyResolver = true } = params
 		const reportsRaw = await this.getReportsRaw({ ...params, includeNamePrefix: false })
-		const reports = this.reportParser.parseReportsFromRaw(reportsRaw, usePropertyResolver)
+		const reports = this.reportParser.parseReportsFromRaw({ reportsRaw, usePropertyResolver })
 		return withWrapper ? reports : (reports.map((report) => report.getReport()) as any)
 	}
 
 	/**
-	 * Parses reports from company facts. Calculates missing properties and uses a single interface
-	 * for all reports.
+	 * Parses reports from company facts.
 	 */
 	public async getReportsRaw(params: GetReportsRawParams): Promise<ReportRaw[]> {
 		const { symbol, includeNamePrefix = false, adjustForSplits = true, resolvePeriodValues = true } = params
@@ -430,5 +430,34 @@ export default class SecEdgarApi {
 			this.documentParser.parseFormDef14a({ xml: await this.getDocumentXMLByUrl(params) })
 
 		return new SubmissionRequestWrapper<FormDef14aData>({ submissions, options, sendRequest })
+	}
+
+	/**
+	 * Gets list of latest filings.
+	 *
+	 * @see https://www.sec.gov/edgar/searchedgar/currentevents
+	 */
+	public async getCurrentFilingsDaily(params?: { formType?: DailyFilingFormType; lookbackDays?: number }) {
+		const { formType = 'ALL', lookbackDays = 0 } = params ?? {}
+
+		if (lookbackDays > 5) {
+			throw new Error(`lookbackDays must be <= 5. Received ${lookbackDays}`)
+		}
+
+		const indexByFormType = {
+			'10-K': 0,
+			'10-Q': 1,
+			'14': 2,
+			'485': 3,
+			'8-K': 4,
+			'S-8': 5,
+			ALL: 6,
+		}
+
+		const indexFormType = indexByFormType[formType] ?? 0
+		const url = `${this.baseUrlSec}/cgi-bin/current?q1=${lookbackDays}&q2=${indexFormType}`
+		const xml = (await this.request(url, true)) as string
+
+		return this.documentParser.parseCurrentFilingsDaily({ xml })
 	}
 }
