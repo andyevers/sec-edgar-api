@@ -48,7 +48,11 @@ export default class FactPeriodResolver {
 	 */
 	public static isAverageShares(params: { propertyName: string }) {
 		const { propertyName } = params
-		return propertyName.includes('WeightedAverage') && propertyName.includes('SharesOutstanding')
+
+		return (
+			propertyName.includes('Average') &&
+			(propertyName.includes('SharesOutstanding') || propertyName.includes('SharesIssued'))
+		)
 	}
 
 	private isAverageShares(params: { propertyName: string }) {

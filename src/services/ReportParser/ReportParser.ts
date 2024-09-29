@@ -39,7 +39,8 @@ export default class ReportParser {
 	/**
 	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
 	 */
-	public parseReportsFromRaw(reportsRaw: ReportRaw[], usePropertyResolver = true): ReportWrapper[] {
+	public parseReportsFromRaw(params: { reportsRaw: ReportRaw[]; usePropertyResolver?: boolean }): ReportWrapper[] {
+		const { reportsRaw, usePropertyResolver = true } = params
 		const reportByYearQuarter = new Map<string, ReportWrapper>()
 
 		const reportsRawFiltered = reportsRaw
