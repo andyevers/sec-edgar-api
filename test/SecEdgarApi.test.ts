@@ -5,7 +5,6 @@ import ReportParser from '../src/services/ReportParser'
 import DocumentParser from '../src/services/DocumentParser'
 import { submissionsResponse } from './__fixtures__/submission-response'
 import { form13gXML } from './__fixtures__/form-13g'
-import { FilingListItemTranslated } from '../src/types'
 
 describe('SecEdgarApi', () => {
 	const client: IClient = {
@@ -52,6 +51,11 @@ describe('SecEdgarApi', () => {
 
 	test('getSubmissions', async () => {
 		const request = jest.spyOn(client, 'request')
+		request.mockResolvedValue({
+			data: Buffer.from(JSON.stringify(submissionsResponse)),
+			message: '',
+			statusCode: 200,
+		})
 		await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
 
 		expect(request).toHaveBeenCalledWith({
@@ -71,7 +75,7 @@ describe('SecEdgarApi', () => {
 	})
 
 	test('createRequestHolders', async () => {
-		const filings = submissionsResponse.filings.recent
+		const filings = submissionsResponse.filings
 
 		const fnGetDocumentXML = jest
 			.spyOn(secEdgarApi, 'getDocumentXMLByUrl')
@@ -92,7 +96,7 @@ describe('SecEdgarApi', () => {
 	})
 
 	test('createRequestInsiderTransactions', async () => {
-		const filings = submissionsResponse.filings.recentTranslated as FilingListItemTranslated[]
+		const filings = submissionsResponse.filings
 
 		const request = secEdgarApi.createRequestInsiderTransactions({ symbol: 'AAPL', filings })
 		const response1 = await request.requestNext()
@@ -107,7 +111,7 @@ describe('SecEdgarApi', () => {
 	})
 
 	test('createRequestEarningsReports', async () => {
-		const filings = submissionsResponse.filings.recent
+		const filings = submissionsResponse.filings
 
 		const request = secEdgarApi.createRequestInsiderTransactions({ symbol: 'AAPL', filings })
 		expect(request.getSubmissions()).toHaveLength(2)

@@ -63,7 +63,6 @@ export interface FilingListItemTranslated {
 interface FilingList {
 	recent: FilingListDetails
 	files: FileData[]
-	recentTranslated?: FilingListItemTranslated[]
 }
 
 export interface SubmissionList {

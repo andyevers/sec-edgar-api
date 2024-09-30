@@ -80,12 +80,6 @@ export interface GetDocumentXMLParams {
 	primaryDocument: string
 }
 
-export interface GetSubmissionsParams {
-	/** symbol or cik */
-	symbol: string
-	includeTranslated?: boolean
-}
-
 /**
  * Gets reports from companies filed with the SEC
  *
@@ -196,16 +190,15 @@ export default class SecEdgarApi {
 	 *
 	 * endpoint: `/submissions/CIK${cik}.json`
 	 */
-	public async getSubmissions(params: GetSubmissionsParams): Promise<SubmissionList> {
-		const { symbol, includeTranslated } = params
+	public async getSubmissions(
+		params: GetSymbolParams,
+	): Promise<{ submissionList: SubmissionList; filings: FilingListItemTranslated[] }> {
+		const { symbol } = params
 		const cik = this.getCikString(symbol)
-		const submissions = await this.request<SubmissionList>(`${this.baseUrlEdgar}/submissions/CIK${cik}.json`)
-		submissions.cik = Number(submissions.cik)
+		const submissionList = await this.request<SubmissionList>(`${this.baseUrlEdgar}/submissions/CIK${cik}.json`)
+		submissionList.cik = Number(submissionList.cik)
 
-		if (!includeTranslated) return submissions
-		submissions.filings.recentTranslated = this.mapFilingListDetails(cik, submissions.filings.recent)
-
-		return submissions
+		return { submissionList, filings: this.mapFilingListDetails(cik, submissionList?.filings?.recent) }
 	}
 
 	/**
@@ -321,7 +314,7 @@ export default class SecEdgarApi {
 	}
 
 	/**
-	 * Gets a raw xml document string. the parameters are found in the submission list response. (response.filings.recent or response.filings.recentTranslated)
+	 * Gets a raw xml document string. the parameters are found in the submission list response.
 	 *
 	 * Some form types can be parsed using the DocumentParser such as form 4 (insider transactions) and form 13g (institutional holders)
 	 *
