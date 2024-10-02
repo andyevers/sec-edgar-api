@@ -58,6 +58,7 @@ export interface FilingListItemTranslated {
 	primaryDocument: string
 	primaryDocDescription: string
 	url: string
+	urlPrimaryDocument: string
 }
 
 interface FilingList {

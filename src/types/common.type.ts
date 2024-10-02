@@ -33,18 +33,18 @@ export interface FactGroup {
 	filedLast: string
 	endFirst: string
 	endLast: string
-	values: number[]
+	values: (number | string)[]
 	fiscalYear: number
 	quarter: number
 	facts: FactItem[]
-	valueSplitAdjustedPeriod: number | null
-	valueSplitAdjustedTrailing: number | null
-	valuePeriodResolved: number | null
-	valueTrailingResolved: number | null
-	valuePeriodFirst: number | null
-	valuePeriodLast: number | null
-	valueTrailingFirst: number | null
-	valueTrailingLast: number | null
+	valueSplitAdjustedPeriod: number | string | null
+	valueSplitAdjustedTrailing: number | string | null
+	valuePeriodResolved: number | string | null
+	valueTrailingResolved: number | string | null
+	valuePeriodFirst: number | string | null
+	valuePeriodLast: number | string | null
+	valueTrailingFirst: number | string | null
+	valueTrailingLast: number | string | null
 }
 
 export interface FactItemExtended extends FactItem {

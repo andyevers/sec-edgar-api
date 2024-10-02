@@ -42,6 +42,10 @@ export default class FactGrouper {
 		return `${fiscalYear}_${quarter}_${name}`
 	}
 
+	private toValue(value: number | string | null | undefined): number | string | null {
+		return !isNaN(value as number) ? Number(value) : value || null
+	}
+
 	/**
 	 * Map structure { 2022_Q3: { name: ... } }. NOTE: Does not include fiscal year report key.
 	 * All groups contain both trailing and period values, so use trailing from Q4 to get FY values.
@@ -84,8 +88,7 @@ export default class FactGrouper {
 			const period = periodResolver.getPeriod(fact)
 			const isPeriodFact = period <= 3
 			const isTrailingFact = period > 3 || (isPeriodFact && quarter === 1)
-
-			const factValue = Number(fact.value)
+			const factValue = this.toValue(fact.value)
 
 			// if no group exists, create from fact
 			if (!factGroupByKey.has(groupKey)) {
@@ -106,9 +109,13 @@ export default class FactGrouper {
 					valuePeriodLast: isPeriodFact ? factValue : null,
 					valueTrailingFirst: isTrailingFact ? factValue : null,
 					valueTrailingLast: isTrailingFact ? factValue : null,
-					values: [factValue],
+					values: [],
 					facts: [fact],
 				})
+
+				if (factValue !== null) {
+					group.values.push(factValue)
+				}
 
 				accnByFiled.set(fact.filed, fact.accn ?? '')
 				unitByPropertyName.set(fact.name, fact.unit)
@@ -127,7 +134,7 @@ export default class FactGrouper {
 			group.filedFirst = fact.filed < group.filedFirst ? fact.filed : group.filedFirst
 			group.filedLast = fact.filed > group.filedLast ? fact.filed : group.filedLast
 
-			if (!group.values.includes(factValue)) {
+			if (factValue !== null && !group.values.includes(factValue)) {
 				group.values.push(factValue)
 			}
 
@@ -179,25 +186,28 @@ export default class FactGrouper {
 				return fact.value === preferredValueTrailing && (period > 3 || period === 0)
 			})
 
-			if (selectedFactPeriod) {
+			const valuePeriod = this.toValue(group.valueSplitAdjustedPeriod ?? preferredValuePeriod)
+			const valueTrailing = this.toValue(group.valueSplitAdjustedTrailing ?? preferredValueTrailing)
+
+			if (selectedFactPeriod && valuePeriod !== null) {
 				periodResolver.add({
 					end: selectedFactPeriod.end,
 					filed: selectedFactPeriod.filed,
 					name: selectedFactPeriod.name,
 					quarter: group.quarter,
-					value: Number(group.valueSplitAdjustedPeriod ?? preferredValuePeriod),
+					value: valuePeriod,
 					year: group.fiscalYear,
 					start: selectedFactPeriod.start,
 				})
 			}
 
-			if (selectedFactTrailing) {
+			if (selectedFactTrailing && valueTrailing !== null) {
 				periodResolver.add({
 					end: selectedFactTrailing.end,
 					filed: selectedFactTrailing.filed,
 					name: selectedFactTrailing.name,
 					quarter: group.quarter,
-					value: Number(group.valueSplitAdjustedTrailing ?? preferredValueTrailing),
+					value: valueTrailing,
 					year: group.fiscalYear,
 					start: selectedFactTrailing.start,
 				})

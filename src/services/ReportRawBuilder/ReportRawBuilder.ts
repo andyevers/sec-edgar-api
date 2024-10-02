@@ -54,7 +54,8 @@ export default class ReportRawBuilder {
 		})
 
 		const reportsCik = Number(facts[0].cik)
-		const fiscalCalculator = this.createFiscalCalculator({ facts })
+		const fiscalCalculator = reportDates ? new FactFiscalCalculator() : this.createFiscalCalculator({ facts })
+		reportDates?.forEach((params) => fiscalCalculator.setReportDates(params))
 
 		const factGrouper = new FactGrouper()
 		const factSplitAdjuster = new FactSplitAdjuster()
@@ -93,12 +94,13 @@ export default class ReportRawBuilder {
 		cik: number
 		splitDate?: string | null
 		splitRatio?: number | null
+		accessionNumber: string
 	}): ReportRaw {
-		const { group, isAnnual, splitDate, splitRatio, cik } = params
+		const { group, isAnnual, splitDate, splitRatio, cik, accessionNumber } = params
 		const fiscalPeriod = isAnnual ? 'FY' : (`Q${group.quarter}` as FiscalPeriod)
-		const accessionNoHyphen = group.accn?.replace(/-/g, '')
-		const url = group.accn
-			? `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoHyphen}/${group.accn}.txt`
+		const accessionNoHyphen = accessionNumber?.replace(/-/g, '')
+		const url = accessionNumber
+			? `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoHyphen}/${accessionNumber}.txt`
 			: null
 
 		return {
@@ -122,11 +124,13 @@ export default class ReportRawBuilder {
 		factGroupsByReportKey: Map<string, FactGroup[]>
 		fiscalCalculator: FactFiscalCalculator
 		splits?: SplitData[]
+		accessionByYearQuarter?: Map<string, string>
 		minYear: number
 		maxYear: number
 		cik: number
 	}) {
-		const { factGroupsByReportKey, minYear, maxYear, cik, splits, fiscalCalculator } = params
+		const { factGroupsByReportKey, minYear, maxYear, cik, splits, fiscalCalculator, accessionByYearQuarter } =
+			params
 
 		const splitByFiscals = new Map<string, SplitData>()
 		const reportByKey = new Map<string, ReportRaw>()
@@ -140,7 +144,10 @@ export default class ReportRawBuilder {
 			const groupWithDates = groups.find((g) => g.reportEnd)!
 			if (!groupWithDates) return
 
-			const split = splitByFiscals.get(`${groupWithDates.fiscalYear}_${groupWithDates.quarter}`)
+			const keyYearQuarter = `${groupWithDates.fiscalYear}_${groupWithDates.quarter}`
+			const split = splitByFiscals.get(keyYearQuarter)
+			const accessionNumber = accessionByYearQuarter?.get(keyYearQuarter) ?? groupWithDates.accn
+
 			const splitDate = split?.endLast ?? null
 			const splitRatio = split?.splitRatio ?? null
 
@@ -148,6 +155,7 @@ export default class ReportRawBuilder {
 
 			const reportPeriod = this.createReport({
 				group: groupWithDates,
+				accessionNumber,
 				cik,
 				isAnnual: false,
 				splitDate,
@@ -170,6 +178,7 @@ export default class ReportRawBuilder {
 
 			const reportAnnual = this.createReport({
 				group: groupWithDates,
+				accessionNumber,
 				cik,
 				isAnnual: true,
 				splitDate,
@@ -188,6 +197,7 @@ export default class ReportRawBuilder {
 
 		const reports: ReportRaw[] = []
 
+		// sort reports by year and quarter
 		for (let year = minYear; year <= maxYear; year++) {
 			for (let quarter = 1; quarter <= 5; quarter++) {
 				const isAnnual = quarter === 5

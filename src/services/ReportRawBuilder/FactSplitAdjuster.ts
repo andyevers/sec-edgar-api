@@ -166,9 +166,18 @@ export default class FactSplitAdjuster {
 		const { isShareRatio, factGroup, split, isTrailing, useOppositePeriodFallback = true } = params
 		const splitVal = split.splitRatio
 
-		if (!splitVal) return true
+		// string values are not adjusted
+		if (typeof (factGroup.valuePeriodFirst ?? factGroup.valueTrailingFirst) === 'string') {
+			return true
+		}
 
-		// these first two criteria will take care of the majority of cases...
+		// can't apply split values of 0 or null
+		if (!splitVal) {
+			return true
+		}
+
+		// these two criteria will take care of the majority of cases where the fact was not filed in
+		// the window of the first and last filing of the split
 		if (factGroup.filedFirst > split.filedLast) {
 			return true
 		}
@@ -176,10 +185,12 @@ export default class FactSplitAdjuster {
 			return false
 		}
 
+		// fact that is being used as the group value
 		const resolvedFact = factGroup.facts.find((f) =>
 			isTrailing ? f.value === factGroup.valueTrailingFirst : f.value === factGroup.valuePeriodFirst,
 		)
 
+		// if resolved fact not found, try checking trailing or period (whichever is not the current one)
 		if (!resolvedFact && useOppositePeriodFallback) {
 			return this.didApplySplit({ ...params, isTrailing: !isTrailing, useOppositePeriodFallback: false })
 		}
@@ -218,13 +229,13 @@ export default class FactSplitAdjuster {
 		}
 
 		// if we still don't know, see if the split value puts us closer to the last known value or further
-		if (factGroup.valuePeriodLast !== null) {
+		if (typeof factGroup.valuePeriodLast === 'number') {
 			const val = this.getGroupValue(factGroup, isTrailing)
 			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
 			return Math.abs(factGroup.valuePeriodLast - val) < Math.abs(factGroup.valuePeriodLast - valueWithSplit)
 		}
 
-		if (factGroup.valueTrailingLast !== null) {
+		if (typeof factGroup.valueTrailingLast === 'number') {
 			const val = this.getGroupValue(factGroup, isTrailing)
 			const valueWithSplit = isShareRatio ? val / splitVal : val * splitVal
 			return Math.abs(factGroup.valueTrailingLast - val) < Math.abs(factGroup.valueTrailingLast - valueWithSplit)

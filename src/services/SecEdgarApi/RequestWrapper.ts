@@ -10,6 +10,7 @@ export interface SendRequestParams {
 
 interface SubmissionRequestWrapperArgs<T> {
 	submissions: FilingListItemTranslated[]
+	usePrimaryDocument: boolean
 	options?: SubmissionRequestWrapperOptions
 	sendRequest: (params: SendRequestParams) => Promise<T>
 }
@@ -25,6 +26,7 @@ export default class SubmissionRequestWrapper<T> {
 	private readonly options: SubmissionRequestWrapperOptions
 	private readonly submissions: FilingListItemTranslated[]
 	private readonly errors: string[]
+	private readonly usePrimaryDocument: boolean
 
 	private readonly sendRequest: (params: SendRequestParams) => Promise<T>
 
@@ -32,11 +34,12 @@ export default class SubmissionRequestWrapper<T> {
 	private isDone: boolean
 
 	constructor(args: SubmissionRequestWrapperArgs<T>) {
-		const { submissions, options = {}, sendRequest } = args
+		const { submissions, options = {}, sendRequest, usePrimaryDocument } = args
 		this.options = options
 		this.submissions = submissions
 		this.results = []
 		this.errors = []
+		this.usePrimaryDocument = usePrimaryDocument
 		this.sendRequest = sendRequest
 		this.requestCount = 0
 		this.isDone = options?.maxRequests === 0
@@ -61,7 +64,8 @@ export default class SubmissionRequestWrapper<T> {
 			}
 		}
 
-		const { url } = submission
+		const { url, urlPrimaryDocument } = submission
+		const requestUrl = this.usePrimaryDocument ? urlPrimaryDocument : url
 		this.requestCount++
 
 		if (this.requestCount >= this.submissions.length || this.requestCount >= maxRequests) {
@@ -69,7 +73,7 @@ export default class SubmissionRequestWrapper<T> {
 		}
 
 		try {
-			const result = await this.sendRequest({ url })
+			const result = await this.sendRequest({ url: requestUrl })
 			const data = {
 				submission,
 				error: null,

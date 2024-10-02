@@ -18,7 +18,7 @@ export default class ReportWrapper extends ReportTranslatedProxy implements Repo
 			url: report.url,
 			dateFiled: report.dateFiled,
 			dateReport: report.dateReport,
-			fiscalPeriod: report.fiscalPeriod ?? '',
+			fiscalPeriod: (report.fiscalPeriod ?? '') as FiscalPeriod,
 			fiscalYear: report.fiscalYear,
 			splitRatio: null,
 			splitDate: null,

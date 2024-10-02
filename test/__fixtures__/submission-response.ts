@@ -120,7 +120,9 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 0,
 			primaryDocument: 'xslF345X05/wk-form4_1691533817.xml',
 			primaryDocDescription: 'FORM 4',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000079/xslF345X05/wk-form4_1691533817.xml',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000079/0000320193-23-000079.txt',
+			urlPrimaryDocument:
+				'https://www.sec.gov/Archives/edgar/data/320193/000032019323000079/xslF345X05/wk-form4_1691533817.xml',
 		},
 		{
 			accessionNumber: '0000320193-23-000077',
@@ -137,7 +139,8 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 1,
 			primaryDocument: 'aapl-20230701.htm',
 			primaryDocDescription: '10-Q',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000077/aapl-20230701.htm',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000077/0000320193-23-000077.txt',
+			urlPrimaryDocument: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000077/aapl-20230701.htm',
 		},
 		{
 			accessionNumber: '0000320193-23-000075',
@@ -154,7 +157,8 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 1,
 			primaryDocument: 'aapl-20230803.htm',
 			primaryDocDescription: '8-K',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000075/aapl-20230803.htm',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000075/0000320193-23-000075.txt',
+			urlPrimaryDocument: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000075/aapl-20230803.htm',
 		},
 		{
 			accessionNumber: '0000320193-23-000070',
@@ -171,7 +175,9 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 0,
 			primaryDocument: 'xslF345X04/wf-form4_168444912415136.xml',
 			primaryDocDescription: 'FORM 4',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000070/xslF345X04/wf-form4_168444912415136.xml',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000070/0000320193-23-000070.txt',
+			urlPrimaryDocument:
+				'https://www.sec.gov/Archives/edgar/data/320193/000032019323000070/xslF345X04/wf-form4_168444912415136.xml',
 		},
 		{
 			accessionNumber: '0000320193-23-000064',
@@ -188,7 +194,8 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 1,
 			primaryDocument: 'aapl-20230401.htm',
 			primaryDocDescription: '10-Q',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000064/aapl-20230401.htm',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000064/0000320193-23-000064.txt',
+			urlPrimaryDocument: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000064/aapl-20230401.htm',
 		},
 		{
 			accessionNumber: '0001193125-19-041014',
@@ -205,7 +212,8 @@ export const submissionsResponse: { submissionList: SubmissionList; filings: Fil
 			isInlineXBRL: 0,
 			primaryDocument: 'd667611dsc13g.htm',
 			primaryDocDescription: 'SC 13G',
-			url: 'https://www.sec.gov/Archives/edgar/data/320193/000119312519041014/d667611dsc13g.htm',
+			url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019323000064/0001193125-19-041014.txt',
+			urlPrimaryDocument: 'https://www.sec.gov/Archives/edgar/data/320193/000119312519041014/d667611dsc13g.htm',
 		},
 	],
 }

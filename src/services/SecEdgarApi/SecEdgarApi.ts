@@ -18,6 +18,7 @@ import Client, { IClient } from '../Client'
 import DocumentParser from '../DocumentParser'
 import ReportParser from '../ReportParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
+import FilingMapper from './FilingMapper'
 import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
 
@@ -27,6 +28,7 @@ interface SecApiArgs {
 	cikBySymbol: Record<string, number>
 	reportParser: ReportParser
 	documentParser: DocumentParser
+	filingMapper?: FilingMapper
 }
 
 export interface CreateRequestWrapperParams {
@@ -91,6 +93,7 @@ export default class SecEdgarApi {
 
 	private readonly throttler: IThrottler
 	private readonly client: IClient
+	private readonly filingMapper: FilingMapper
 
 	public readonly cikBySymbol: Record<string, number>
 	public readonly reportParser: ReportParser
@@ -103,14 +106,16 @@ export default class SecEdgarApi {
 			cikBySymbol: _cikBySymbol,
 			reportParser: new ReportParser(),
 			documentParser: new DocumentParser(),
+			filingMapper: new FilingMapper(),
 		},
 	) {
-		const { client, throttler, cikBySymbol, reportParser, documentParser } = args
+		const { client, throttler, cikBySymbol, reportParser, documentParser, filingMapper = new FilingMapper() } = args
 		this.client = client
 		this.throttler = throttler
 		this.cikBySymbol = cikBySymbol
 		this.reportParser = reportParser
 		this.documentParser = documentParser
+		this.filingMapper = filingMapper
 
 		this.baseUrlEdgar = 'https://data.sec.gov'
 		this.baseUrlSec = 'https://www.sec.gov'
@@ -139,26 +144,7 @@ export default class SecEdgarApi {
 	}
 
 	private mapFilingListDetails(cik: string | number, filingListDetails: FilingListDetails) {
-		const filings: FilingListItemTranslated[] = []
-
-		for (const key in filingListDetails) {
-			const k = key as keyof FilingListDetails
-			const dataArr = filingListDetails[k]
-
-			for (let i = 0; i < dataArr.length; i++) {
-				filings[i] = filings[i] ?? {}
-				const filing = filings[i] as unknown as Record<string, string | number>
-				filing[k] = dataArr[i]
-			}
-		}
-
-		for (const filing of filings) {
-			const accessionStr = filing.accessionNumber.replace(/-/g, '')
-			const primaryDocument = filing.primaryDocument
-			filing.url = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accessionStr}/${primaryDocument}`
-		}
-
-		return filings
+		return this.filingMapper.mapFilingListDetails(cik, filingListDetails)
 	}
 
 	private getCreateRequestSubmissions(params: CreateRequestWrapperParams, forms: string[]) {
@@ -191,14 +177,34 @@ export default class SecEdgarApi {
 	 * endpoint: `/submissions/CIK${cik}.json`
 	 */
 	public async getSubmissions(
-		params: GetSymbolParams,
+		params: GetSymbolParams & { includeOldFilings?: boolean },
 	): Promise<{ submissionList: SubmissionList; filings: FilingListItemTranslated[] }> {
-		const { symbol } = params
+		const { symbol, includeOldFilings } = params
 		const cik = this.getCikString(symbol)
 		const submissionList = await this.request<SubmissionList>(`${this.baseUrlEdgar}/submissions/CIK${cik}.json`)
+
+		if (includeOldFilings) {
+			const additionalFilings = await Promise.all(
+				submissionList.filings.files.map((file) =>
+					this.request<SubmissionList['filings']['recent']>(`${this.baseUrlEdgar}/submissions/${file.name}`),
+				),
+			)
+
+			additionalFilings.forEach((data) => {
+				for (const key in data) {
+					const k = key as keyof typeof data
+					const valuesCurrent = submissionList.filings.recent[k]
+					const values = data[k]
+					values.forEach((v) => valuesCurrent.push(v as string & number))
+				}
+			})
+		}
+
 		submissionList.cik = Number(submissionList.cik)
 
-		return { submissionList, filings: this.mapFilingListDetails(cik, submissionList?.filings?.recent) }
+		const filings = this.mapFilingListDetails(cik, submissionList.filings.recent)
+
+		return { submissionList, filings }
 	}
 
 	/**
@@ -361,7 +367,12 @@ export default class SecEdgarApi {
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseForm4({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new SubmissionRequestWrapper<Form4Data>({ submissions, options, sendRequest })
+		return new SubmissionRequestWrapper<Form4Data>({
+			submissions,
+			options,
+			sendRequest,
+			usePrimaryDocument: true,
+		})
 	}
 
 	/**
@@ -383,7 +394,12 @@ export default class SecEdgarApi {
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseForm13g({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new SubmissionRequestWrapper<Form13GData>({ submissions, options, sendRequest })
+		return new SubmissionRequestWrapper<Form13GData>({
+			submissions,
+			options,
+			sendRequest,
+			usePrimaryDocument: true,
+		})
 	}
 
 	/**
@@ -403,7 +419,12 @@ export default class SecEdgarApi {
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseForm10k({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new SubmissionRequestWrapper<Form10KData>({ submissions, options, sendRequest })
+		return new SubmissionRequestWrapper<Form10KData>({
+			submissions,
+			options,
+			sendRequest,
+			usePrimaryDocument: true,
+		})
 	}
 
 	/**
@@ -422,7 +443,12 @@ export default class SecEdgarApi {
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseFormDef14a({ xml: await this.getDocumentXMLByUrl(params) })
 
-		return new SubmissionRequestWrapper<FormDef14aData>({ submissions, options, sendRequest })
+		return new SubmissionRequestWrapper<FormDef14aData>({
+			submissions,
+			options,
+			sendRequest,
+			usePrimaryDocument: true,
+		})
 	}
 
 	/**
