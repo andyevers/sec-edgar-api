@@ -247,8 +247,7 @@ export default class XMLParser {
 
 		this.iterateXML({
 			xml,
-			onCloseTag: ({ path }) => {
-				const tag = path.split('.').pop()
+			onCloseTag: () => {
 				if (curNode?.getPath() === boldPath) {
 					curNode?.setText(`${curNode?.getText() ?? ''}}}`)
 					boldPath = null

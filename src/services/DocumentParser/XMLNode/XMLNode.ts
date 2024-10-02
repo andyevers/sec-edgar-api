@@ -81,13 +81,13 @@ export class XMLNode {
 		if (text === '') return null
 
 		let colNum = text
-			.replace(/,|\(|\)|\%/g, '')
+			.replace(/,|\(|\)|%/g, '')
 			.replace(/\{\{/g, '')
 			.replace(/\}\}/g, '')
 			.trim()
 		if (colNum === '-' || colNum === '$') return null
 
-		colNum = colNum.replace(/\-|\$/g, '')
+		colNum = colNum.replace(/-|\$/g, '')
 
 		const hasNumBeforeParenthesis = Boolean(/\d+\s*(?=\()/.test(text))
 		colNum = hasNumBeforeParenthesis ? colNum.split(' ')[0]?.trim() : colNum

@@ -122,7 +122,7 @@ export default class SecEdgarApi {
 	}
 
 	private async request<T>(url: string, isText = false): Promise<T> {
-		return new Promise(async (resolve, reject) => {
+		return new Promise((resolve, reject) => {
 			this.throttler.add(async () => {
 				try {
 					const response = await this.client.request({
@@ -273,8 +273,9 @@ export default class SecEdgarApi {
 	): Promise<T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]> {
 		const { withWrapper = false, usePropertyResolver = true } = params
 		const reportsRaw = await this.getReportsRaw({ ...params, includeNamePrefix: false })
-		const reports = this.reportParser.parseReportsFromRaw({ reportsRaw, usePropertyResolver })
-		return withWrapper ? reports : (reports.map((report) => report.getReport()) as any)
+		const reportsWithWrapper = this.reportParser.parseReportsFromRaw({ reportsRaw, usePropertyResolver })
+		const reports = withWrapper ? reportsWithWrapper : reportsWithWrapper.map((report) => report.getReport())
+		return reports as T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]
 	}
 
 	/**

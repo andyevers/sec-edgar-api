@@ -3,33 +3,36 @@ interface OnProgressData {
 	countRunning: number
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ResolveValue = any
+
 interface ThrottlerArgs {
 	maxConcurrent?: number
 	delayMs?: number
 	onProgress?: (data: OnProgressData) => void
-	onResult?: (result: any) => void
-	onError?: (err: any) => void
-	onEnd?: (results: any[], errors: any[]) => void
+	onResult?: (result: ResolveValue) => void
+	onError?: (err: ResolveValue) => void
+	onEnd?: (results: ResolveValue[], errors: ResolveValue[]) => void
 }
 
 export interface IThrottler {
 	setDelayMs(delayMs: number): void
-	add: (fn: () => Promise<any>) => void
+	add: (fn: () => Promise<ResolveValue>) => void
 }
 
 export default class Throttler implements IThrottler {
 	private readonly decrementTimeouts: Set<NodeJS.Timeout>
-	private readonly queue: (() => Promise<any>)[]
-	private readonly results: any[]
-	private readonly errors: any[]
+	private readonly queue: (() => Promise<ResolveValue>)[]
+	private readonly results: ResolveValue[]
+	private readonly errors: ResolveValue[]
 
 	private maxConcurrent: number
 	private delayMs: number
 
 	public onProgress?: (data: OnProgressData) => void
-	public onResult?: (result: any) => void
-	public onError?: (err: any) => void
-	public onEnd?: (results: any[], errors: any[]) => void
+	public onResult?: (result: ResolveValue) => void
+	public onError?: (err: ResolveValue) => void
+	public onEnd?: (results: ResolveValue[], errors: ResolveValue[]) => void
 
 	constructor(args: ThrottlerArgs = {}) {
 		const { maxConcurrent = 10, delayMs = 1100, onProgress, onResult, onError, onEnd } = args
@@ -52,7 +55,7 @@ export default class Throttler implements IThrottler {
 		this.delayMs = delayMs
 	}
 
-	public add(fn: () => Promise<any>) {
+	public add(fn: () => Promise<ResolveValue>) {
 		this.queue.push(fn)
 		this.run()
 	}
@@ -70,7 +73,7 @@ export default class Throttler implements IThrottler {
 			return
 		}
 
-		const fn = this.queue.shift() as () => Promise<any>
+		const fn = this.queue.shift() as () => Promise<ResolveValue>
 
 		// record the request before it is made
 		const decrementTimeout = setTimeout(() => {

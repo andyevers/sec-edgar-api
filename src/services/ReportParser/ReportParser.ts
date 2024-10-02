@@ -15,7 +15,7 @@ type TranslateRawReportsCallback<T> = (
 	report: T extends undefined ? ReportTranslated : Record<keyof T, string | number>,
 	reportRaw: ReportRaw,
 	keyTranslator: T,
-) => any
+) => ReportTranslated | ReportRaw | Record<string, string | number | null>
 
 /**
  * Takes company facts data from the SEC and translates them to reports as json objects.
@@ -85,7 +85,7 @@ export default class ReportParser {
 	public parseReportsRawNoMeta(companyFactListData: CompanyFactListData): Record<string, number>[] {
 		const reportsRaw = this.parseReportsRaw(companyFactListData)
 		reportsRaw.forEach((reportRaw) => {
-			const report = reportRaw as any
+			const report = reportRaw as Partial<ReportRaw>
 			delete report.dateFiled
 			delete report.dateReport
 			delete report.fiscalPeriod
@@ -110,7 +110,7 @@ export default class ReportParser {
 		keyTranslator?: T,
 	): C extends unknown ? ReportTranslated[] : ReturnType<C>[] {
 		const keyTranslations = (keyTranslator ?? this.keyTranslator) as Record<string, string[]>
-		const reports: Record<string, string | number | null>[] = []
+		const reports: (ReportTranslated | Record<string, string | number | null>)[] = []
 
 		reportsRaw.forEach((report) => {
 			const reportNew: Record<string, string | number | null | boolean> = {}
@@ -131,7 +131,7 @@ export default class ReportParser {
 				? callback(reportNew as Parameters<C>[0], report, keyTranslations as Parameters<C>[2])
 				: reportNew
 
-			reports.push(reportFiltered)
+			reports.push(reportFiltered as ReportTranslated)
 		})
 
 		return reports as C extends unknown ? ReportTranslated[] : ReturnType<C>[]

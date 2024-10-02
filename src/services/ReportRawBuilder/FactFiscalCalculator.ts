@@ -23,8 +23,8 @@ export default class FactFiscalCalculator {
 
 	private didResolve = false
 
-	public add(fact: { end: string; filed: string; frame?: string }) {
-		const { end, filed, frame } = fact
+	public add(fact: { end: string; filed: string }) {
+		const { end, filed } = fact
 
 		if (this.didResolve) {
 			throw new Error('Cannot add fact after resolving')

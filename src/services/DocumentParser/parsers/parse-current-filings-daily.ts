@@ -19,7 +19,7 @@ export function parseCurrentFilingsDaily(params: XMLParams) {
 		const partAccessionForm = (parts[1] ?? '').split('/Archives/edgar/data/')[1]?.split('/')?.[1] ?? ''
 
 		const partNameCikParts = partNameCik.split('</a>')
-		const [accession, formUnfiltered] = partAccessionForm?.split('>')
+		const [accession, formUnfiltered] = partAccessionForm?.split('>') ?? []
 
 		const accessionNumber = (accession?.substring(0, accession.lastIndexOf('-')) ?? '').trim()
 		const form = (formUnfiltered?.replace(/</g, '') ?? '').trim()

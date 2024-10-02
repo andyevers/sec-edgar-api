@@ -215,11 +215,11 @@ export default class FactSplitAdjuster {
 			}
 		}
 
-		if (resolvedFact?.filed! > split.filedLast) {
+		if (resolvedFact?.filed && resolvedFact.filed > split.filedLast) {
 			return true
 		}
 
-		if (resolvedFact?.filed! < split.filedFirst) {
+		if (resolvedFact?.filed && resolvedFact.filed < split.filedFirst) {
 			return false
 		}
 

@@ -159,10 +159,11 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 					continue
 				case 'price':
 				case 'shares':
-				case 'sharesEnding':
+				case 'sharesEnding': {
 					const valueNum = Number(text.replace(/,/g, ''))
 					transaction[colName] = text === '' || isNaN(valueNum) ? null : valueNum
 					continue
+				}
 				default:
 					transaction[colName as 'ownership' | 'securityType'] = text
 			}
@@ -214,11 +215,12 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 				case 'shares':
 				case 'sharesUnderlying':
 				case 'priceExcercised':
-				case 'sharesEnding':
+				case 'sharesEnding': {
 					if (colName === 'shares' && transaction.shares !== null) continue
 					const valueNum = Number(text.replace(/,/g, ''))
 					transaction[colName] = text === '' || isNaN(valueNum) ? null : valueNum
 					continue
+				}
 				default:
 					transaction[colName as 'ownership' | 'securityType'] = text
 			}
