@@ -138,8 +138,8 @@ export default class FactGrouper {
 				group.values.push(factValue)
 			}
 
-			if (!group.accn && periodResolver.isOriginalFiling({ end: fact.end, filed: fact.filed })) {
-				group.accn = fact.accn ?? ''
+			if (periodResolver.isOriginalFiling({ end: fact.end, filed: fact.filed })) {
+				group.accn = fact.accn ?? group.accn ?? ''
 				accnByFiled.set(fact.filed, group.accn)
 			}
 
