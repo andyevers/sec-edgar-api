@@ -46,8 +46,10 @@ export default class DocumentParser {
 	}
 
 	public parseCurrentFilings(params: XMLParams) {
-		// console.log(params.xml)
-
 		return this.parsersByName.parseCurrentFilings(params)
+	}
+
+	public parseCurrentFilingsXBRL(params: XMLParams) {
+		return this.parsersByName.parseCurrentFilingsXBRL(params)
 	}
 }

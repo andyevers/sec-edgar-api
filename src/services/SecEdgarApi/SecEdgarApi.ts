@@ -541,6 +541,25 @@ export default class SecEdgarApi {
 	}
 
 	/**
+	 * @see https://www.sec.gov/structureddata/rss-feeds-submitted-filings
+	 */
+	public async getCurrentFilingsXBRL(params?: { taxonomy?: 'usGaap' | 'mutualFund' | 'inlineXbrl' | 'allXbrl' }) {
+		const { taxonomy = 'allXbrl' } = params ?? {}
+
+		const urlByTaxonomy = {
+			usGaap: 'https://www.sec.gov/Archives/edgar/usgaap.rss.xml',
+			mutualFund: 'https://www.sec.gov/Archives/edgar/xbrl-rr.rss.xml',
+			inlineXbrl: 'https://www.sec.gov/Archives/edgar/xbrl-inline.rss.xml',
+			allXbrl: 'https://www.sec.gov/Archives/edgar/xbrlrss.all.xml',
+		}
+
+		const url = urlByTaxonomy[taxonomy] || urlByTaxonomy.allXbrl
+		const xml = await (this.request(url, true) as Promise<string>)
+
+		return this.documentParser.parseCurrentFilingsXBRL({ xml })
+	}
+
+	/**
 	 * Gets insider transactions for a provided symbol or CIK.
 	 *
 	 * To get transactions by a specific owner, set isOwnerCik to true and provide
