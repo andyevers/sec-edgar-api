@@ -1,53 +1,10 @@
 import { CurrentFilingsXBRL, XMLParams } from '../../../types'
-
-function mapAttributes(attributes: string[]) {
-	const attributesMap = new Map<string, string>()
-	attributes.forEach((attr) => {
-		const [key, value] = attr.split('=')
-		if (!value) return
-		attributesMap.set(key, value.substring(1, value.length - 1))
-	})
-	return attributesMap
-}
-
-function iterateXML(params: {
-	xml: string
-	onOpenTag?: (tagName: string, attributes: string[]) => void
-	onCloseTag?: (tagName: string) => void
-	onInnerText?: (text: string) => void
-}) {
-	const { onCloseTag, onInnerText, onOpenTag, xml } = params
-
-	for (let i = 0; i < xml.length; i++) {
-		if (xml[i] === '<' && xml[i + 1] !== '/') {
-			i++
-			const tagEndIndex = xml.indexOf('>', i)
-			const currentTagStr = xml.substring(i, tagEndIndex)
-			const tagName = currentTagStr.split(' ', 1)[0]
-			const attributes = currentTagStr.split(' ').slice(1)
-			if (!attributes[attributes.length - 1]?.includes('=')) {
-				attributes.pop()
-			}
-			i = tagEndIndex
-			onOpenTag?.(tagName, attributes)
-		} else if (xml[i] === '<' && xml[i + 1] === '/') {
-			i += 2
-			const tagEndIndex = xml.indexOf('>', i)
-			const currentTagStr = xml.substring(i, tagEndIndex)
-			i = tagEndIndex
-			onCloseTag?.(currentTagStr)
-		} else {
-			const nextOpenTagIndex = xml.indexOf('<', i)
-			const nextIndex = nextOpenTagIndex === -1 ? xml.length : nextOpenTagIndex
-			const text = xml.substring(i, nextIndex)
-			onInnerText?.(text)
-			i = nextIndex - 1
-		}
-	}
-}
+import XMLIterator from '../XMLIterator'
 
 export function parseCurrentFilingsXBRL(params: XMLParams): CurrentFilingsXBRL {
 	const { xml } = params
+
+	const xmlIterator = new XMLIterator()
 
 	const result: CurrentFilingsXBRL = {
 		title: '',
@@ -60,7 +17,7 @@ export function parseCurrentFilingsXBRL(params: XMLParams): CurrentFilingsXBRL {
 	}
 
 	let lastOpenTag = ''
-	iterateXML({
+	xmlIterator.iterateXML({
 		xml: xml,
 		onInnerText: (text) => {
 			const textTrimmed = text.trim()
@@ -97,7 +54,7 @@ export function parseCurrentFilingsXBRL(params: XMLParams): CurrentFilingsXBRL {
 			switch (tagName) {
 				case 'edgar:xbrlFile': {
 					const item = result.items[result.items.length - 1]
-					const attributesMap = mapAttributes(attributes)
+					const attributesMap = xmlIterator.mapAttributes(attributes)
 
 					item?.files.push({
 						url: attributesMap.get('edgar:url') ?? '',
@@ -138,7 +95,7 @@ export function parseCurrentFilingsXBRL(params: XMLParams): CurrentFilingsXBRL {
 				case 'enclosure': {
 					const latestItem = result.items[result.items.length - 1]
 					if (!latestItem) return
-					const attributesMap = mapAttributes(attributes)
+					const attributesMap = xmlIterator.mapAttributes(attributes)
 					latestItem.enclosureUrl = attributesMap.get('url') ?? ''
 					latestItem.enclosureLength = Number(attributesMap.get('length') ?? 0)
 					latestItem.enclosureType = attributesMap.get('type') ?? ''

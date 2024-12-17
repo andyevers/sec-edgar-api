@@ -536,7 +536,6 @@ export default class SecEdgarApi {
 
 		const xml = (await this.request(url, true)) as string
 
-		console.log(url)
 		return this.documentParser.parseCurrentFilings({ xml })
 	}
 
