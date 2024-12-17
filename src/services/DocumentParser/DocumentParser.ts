@@ -36,4 +36,18 @@ export default class DocumentParser {
 	public parseCurrentFilingsDaily(params: XMLParams) {
 		return this.parsersByName.parseCurrentFilingsDaily(params)
 	}
+
+	public parseInsiderTransactions(params: XMLParams) {
+		return this.parsersByName.parseInsiderTransactions(params)
+	}
+
+	public parseCompanies(params: XMLParams) {
+		return this.parsersByName.parseCompanies(params)
+	}
+
+	public parseCurrentFilings(params: XMLParams) {
+		// console.log(params.xml)
+
+		return this.parsersByName.parseCurrentFilings(params)
+	}
 }

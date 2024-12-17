@@ -1,4 +1,4 @@
-import { Form4Data, InsiderTransaction, TransactionCode, XMLParams } from '../../../types'
+import { Form4Data, InsiderTransactionExtended, TransactionCode, XMLParams } from '../../../types'
 import XMLParser from '../XMLParser'
 
 /**
@@ -62,7 +62,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 		const [month, day, year] = str.split('/')
 		return [month, day, year].some((x) => x === undefined) ? '' : `${year}-${month}-${day}`
 	}
-	const createTransaction = (): InsiderTransaction => ({
+	const createTransaction = (): InsiderTransactionExtended => ({
 		filerName: filterNameText,
 		filerPosition: position,
 		filerPositionTypes,
@@ -90,7 +90,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 		return text?.trim() ?? ''
 	}
 
-	const headingNonDerivative: (keyof InsiderTransaction | '')[] = [
+	const headingNonDerivative: (keyof InsiderTransactionExtended | '')[] = [
 		'securityType',
 		'date',
 		'dateExecuted',
@@ -103,7 +103,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 		'ownership',
 	]
 
-	const headingDerivative: (keyof InsiderTransaction | '')[] = [
+	const headingDerivative: (keyof InsiderTransactionExtended | '')[] = [
 		'securityType',
 		'priceExcercised',
 		'date',
@@ -122,7 +122,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 	]
 
 	const maxIterations = 10_000
-	const transactions: InsiderTransaction[] = []
+	const transactions: InsiderTransactionExtended[] = []
 
 	transactionsNonDerivative: for (let row = 4; row < maxIterations; row++) {
 		const transaction = createTransaction()
@@ -130,7 +130,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 
 		// get all non-derivative transactions
 		for (let col = 1; col < 11; col++) {
-			const colName = (headingNonDerivative[col - 1] ?? '') as keyof InsiderTransaction | ''
+			const colName = (headingNonDerivative[col - 1] ?? '') as keyof InsiderTransactionExtended | ''
 			const colKey = `3.${row}.${col}`
 
 			const text = getColText(colKey)
@@ -187,7 +187,7 @@ export function parseForm4(params: XMLParams, xmlParser = new XMLParser()): Form
 		}
 
 		for (let col = 1; col < 16; col++) {
-			const colName = (headingDerivative[col - 1] ?? '') as keyof InsiderTransaction | ''
+			const colName = (headingDerivative[col - 1] ?? '') as keyof InsiderTransactionExtended | ''
 			const colKey = `4.${row}.${col}`
 
 			const text = (textMap.get(colKey) ?? '').replace(/\(\d+\)|\$/g, '').trim()

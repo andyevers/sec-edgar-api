@@ -24,7 +24,7 @@ export type TransactionType = 'Acquire' | 'Dispose'
 export type TransactionCode = keyof TransactionDescriptionByCode
 export type TransactionDescription = TransactionDescriptionByCode[TransactionCode]
 
-export interface InsiderTransaction {
+export interface InsiderTransactionExtended {
 	filerName: string
 	filerPosition: string
 	filerPositionTypes: string[]
@@ -44,7 +44,7 @@ export interface InsiderTransaction {
 	price: number | null
 	priceExcercised: number | null
 	ownership: string
-	explainationByKey: Partial<Record<keyof InsiderTransaction, string>>
+	explainationByKey: Partial<Record<keyof InsiderTransactionExtended, string>>
 }
 
 export interface InstitutionalHolder {
@@ -90,7 +90,7 @@ export interface Holder {
 // FORM DATA
 
 export interface Form4Data {
-	transactions: InsiderTransaction[]
+	transactions: InsiderTransactionExtended[]
 }
 
 export interface Form10KData {

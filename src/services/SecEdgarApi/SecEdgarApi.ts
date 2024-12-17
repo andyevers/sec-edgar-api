@@ -82,6 +82,32 @@ export interface GetDocumentXMLParams {
 	primaryDocument: string
 }
 
+export interface GetInsiderTransactionsParams {
+	page: number
+	symbol: string | number
+	itemsPerPage?: number
+	isOwnerCik?: boolean
+}
+
+export interface SearchCompaniesParams {
+	sic?: number
+	/** Abbreviation of state: IL, CA, NY, etc... */
+	state?: string
+	page: number
+	itemsPerPage?: number
+	/** Partial name of the company for search. */
+	company?: string
+	companyMatch?: 'startsWith' | 'contains'
+}
+
+interface GetCurrentFilingsParams {
+	formType?: '4' | '3' | '10-Q' | '10-K' | 'SC 13G' | '13F-HR' | '8-K'
+	page?: number
+	itemsPerPage?: number
+	symbol?: string | number
+	searchType?: 'include' | 'exclude' | 'only'
+}
+
 /**
  * Gets reports from companies filed with the SEC
  *
@@ -415,7 +441,16 @@ export default class SecEdgarApi {
 	 * ```
 	 */
 	public createRequestEarningsReports(params: CreateRequestWrapperParams): SubmissionRequestWrapper<Form10KData> {
-		const submissions = this.getCreateRequestSubmissions(params, ['10-Q', '10-Q/A', '10-K', '10-K/A'])
+		const submissions = this.getCreateRequestSubmissions(params, [
+			'10-Q',
+			'10-Q/A',
+			'10-K',
+			'10-K/A',
+			'20-F',
+			'20-F/A',
+			'40-F',
+			'40-F/A',
+		])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
 			this.documentParser.parseForm10k({ xml: await this.getDocumentXMLByUrl(params) })
@@ -453,11 +488,15 @@ export default class SecEdgarApi {
 	}
 
 	/**
-	 * Gets list of latest filings.
+	 * Gets list of filings for a day up to 5 days ago.
 	 *
 	 * @see https://www.sec.gov/edgar/searchedgar/currentevents
 	 */
-	public async getCurrentFilingsDaily(params?: { formType?: DailyFilingFormType; lookbackDays?: number }) {
+	public async getCurrentFilingsDaily(params?: {
+		formType?: DailyFilingFormType
+		/** max 5 */
+		lookbackDays?: number
+	}) {
 		const { formType = 'ALL', lookbackDays = 0 } = params ?? {}
 
 		if (lookbackDays > 5) {
@@ -479,5 +518,66 @@ export default class SecEdgarApi {
 		const xml = (await this.request(url, true)) as string
 
 		return this.documentParser.parseCurrentFilingsDaily({ xml })
+	}
+
+	public async getCurrentFilings(params?: GetCurrentFilingsParams) {
+		const { page = 1, itemsPerPage = 100, formType, searchType, symbol } = params ?? {}
+
+		const type = formType?.replace(/\s/, '+') ?? null
+		const owner = searchType ?? (formType?.includes(' ') ? 'include' : 'only')
+		const offset = (page - 1) * Math.max(1, itemsPerPage || 100)
+		const cik = symbol ? Number(this.getCikString(symbol)) : null
+
+		let url = `${this.baseUrlSec}/cgi-bin/browse-edgar?action=getcurrent&start=${offset}&count=${itemsPerPage}&output=atom`
+
+		if (cik) url += `&CIK=${symbol}`
+		if (type) url += `&type=${formType}`
+		if (owner) url += `&owner=${searchType}`
+
+		const xml = (await this.request(url, true)) as string
+
+		console.log(url)
+		return this.documentParser.parseCurrentFilings({ xml })
+	}
+
+	/**
+	 * Gets insider transactions for a provided symbol or CIK.
+	 *
+	 * To get transactions by a specific owner, set isOwnerCik to true and provide
+	 * the owner CIK for the symbol parameter.
+	 *
+	 * example at https://www.sec.gov/cgi-bin/own-disp?action=getissuer&CIK=0000320193
+	 */
+	public async getInsiderTransactions(params: GetInsiderTransactionsParams) {
+		const { page, symbol, itemsPerPage, isOwnerCik = false } = params
+		const action = isOwnerCik ? 'getowner' : 'getissuer'
+
+		const offset = (page - 1) * Math.max(1, itemsPerPage || 100)
+		const cik = this.getCikString(symbol)
+		const url = `${this.baseUrlSec}/cgi-bin/own-disp?action=${action}&CIK=${cik}&owner=include&start=${offset}&count=${itemsPerPage}`
+		const xml = (await this.request(url, true)) as string
+
+		return this.documentParser.parseInsiderTransactions({ xml })
+	}
+
+	/**
+	 * Search for companies from by name, sic code, or state.
+	 */
+	public async searchCompanies(params: SearchCompaniesParams) {
+		const { sic, page, itemsPerPage: itemsPerPageProp, state, company, companyMatch } = params
+		const match = companyMatch === 'startsWith' ? '' : 'contains'
+		const itemsPerPage = Math.max(1, Math.min(100, itemsPerPageProp || 100))
+		const offset = (page - 1) * itemsPerPage
+		let url = `${this.baseUrlSec}/cgi-bin/browse-edgar?action=getcompany&owner=exclude&&start=${offset}&count=${itemsPerPage}&hidefilings=0`
+		if (sic) url += `&SIC=${sic}`
+		if (state) url += `&State=${state}`
+		if (company) url += `&company=${company}&match=${match}`
+		if (!sic && !state && !company) {
+			throw new Error('You must provide sic, company, or state filters')
+		}
+
+		const xml = (await this.request(url, true)) as string
+
+		return this.documentParser.parseCompanies({ xml })
 	}
 }
