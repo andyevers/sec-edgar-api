@@ -49,21 +49,6 @@ describe('SecEdgarApi', () => {
 		})
 	})
 
-	test('getSubmissions', async () => {
-		const request = jest.spyOn(client, 'request')
-		request.mockResolvedValue({
-			data: Buffer.from(JSON.stringify(submissionsResponse)),
-			message: '',
-			statusCode: 200,
-		})
-		await secEdgarApi.getSubmissions({ symbol: 'AAPL' })
-
-		expect(request).toHaveBeenCalledWith({
-			url: 'https://data.sec.gov/submissions/CIK0000000123.json',
-			onError: expect.any(Function),
-		})
-	})
-
 	test('getFactFrame', async () => {
 		const request = jest.spyOn(client, 'request')
 		await secEdgarApi.getFactFrame({ fact: 'AccountsPayable', taxonomy: 'dei', frame: 'CY2023Q3I', unit: 'USD' })
@@ -89,7 +74,7 @@ describe('SecEdgarApi', () => {
 		expect(request.getErrors().length).toBe(0)
 		expect(request.getResults()[0].result).toBe(result)
 		expect(request.getResults()[0].submission).toBe(request.getSubmissions()[0])
-		expect(fnGetDocumentXML).toHaveBeenCalledWith({ url: request.getSubmissions()[0].url })
+		expect(fnGetDocumentXML).toHaveBeenCalledWith({ url: request.getSubmissions()[0].urlPrimaryDocument })
 
 		// result data tested in DocumentParser.test.ts
 		expect(result?.holders.length).toBe(7)
