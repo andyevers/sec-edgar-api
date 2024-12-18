@@ -82,9 +82,9 @@ export default class InstanceParser {
 		const doc = this.xmlParser.parse(xbrlContent)
 		const xbrl = doc.xbrl ?? (doc.XBRL as any)
 
-		const contexts: XbrlContext[] = utilType.toArray(xbrl?.context ?? []).map((context: any) => {
-			return this.parseContext(context)
-		})
+		const contexts: XbrlContext[] = utilType
+			.toArray(xbrl?.context ?? [])
+			.map((context: any) => this.parseContext(context))
 
 		const units: XbrlUnit[] = utilType.toArray(xbrl?.unit ?? []).map((unit: any) => ({
 			id: unit['@_id'] ?? '',
@@ -94,19 +94,20 @@ export default class InstanceParser {
 		const facts: XbrlElement[] = []
 
 		for (const name in xbrl) {
-			const obj = xbrl[name]
-			if (!obj['@_contextRef']) continue
-			const element: XbrlElement = { name, id: '', contextRef: '' }
+			for (const element of utilType.toArray(xbrl[name])) {
+				if (!element['@_contextRef']) continue
 
-			for (const key in obj) {
-				if (key.startsWith('@_')) {
-					element[key.substring(2) as keyof XbrlElement] = obj[key]
-				} else if (key === '#text') {
-					element.text = obj[key]
+				const factElement: XbrlElement = { name, id: '', contextRef: '' }
+				for (const key in element) {
+					if (key.startsWith('@_')) {
+						factElement[key.substring(2) as keyof XbrlElement] = element[key]
+					} else if (key === '#text') {
+						factElement.text = element[key]
+					}
 				}
-			}
 
-			facts.push(element)
+				facts.push(factElement)
+			}
 		}
 
 		return { facts, contexts, units }
