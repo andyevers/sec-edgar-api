@@ -54,7 +54,7 @@ export default class DocumentParser {
 		return this.parsersByName.parseCurrentFilingsXbrl(params)
 	}
 
-	public parseXbrl(params: XMLParams & ParseXbrlOptions) {
+	public parseXbrl(params: XMLParams & ParseXbrlOptions & { includeReport?: boolean }) {
 		return this.parsersByName.parseXbrl(params)
 	}
 }

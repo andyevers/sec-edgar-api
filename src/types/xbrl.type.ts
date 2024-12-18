@@ -44,7 +44,7 @@ export interface XbrlElement {
 export interface XbrlInstance {
 	contexts: XbrlContext[]
 	units: XbrlUnit[]
-	facts: XbrlElement[]
+	factElements: XbrlElement[]
 }
 
 export interface XbrlSchema {

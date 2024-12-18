@@ -76,7 +76,7 @@ export default class InstanceParser {
 		const xbrlContent = xml.substring(indexXbrlStart, indexXbrlEnd + 7)
 
 		if (indexXbrlStart === -1) {
-			return { facts: [], contexts: [], units: [] }
+			return { factElements: [], contexts: [], units: [] }
 		}
 
 		const doc = this.xmlParser.parse(xbrlContent)
@@ -88,10 +88,10 @@ export default class InstanceParser {
 
 		const units: XbrlUnit[] = utilType.toArray(xbrl?.unit ?? []).map((unit: any) => ({
 			id: unit['@_id'] ?? '',
-			measure: unit['@_measure'] ?? '',
+			measure: unit['measure']?.['#text'] ?? '',
 		}))
 
-		const facts: XbrlElement[] = []
+		const factElements: XbrlElement[] = []
 
 		for (const name in xbrl) {
 			for (const element of utilType.toArray(xbrl[name])) {
@@ -106,10 +106,10 @@ export default class InstanceParser {
 					}
 				}
 
-				facts.push(factElement)
+				factElements.push(factElement)
 			}
 		}
 
-		return { facts, contexts, units }
+		return { factElements, contexts, units }
 	}
 }

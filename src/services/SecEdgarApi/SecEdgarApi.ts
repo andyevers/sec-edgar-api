@@ -559,7 +559,7 @@ export default class SecEdgarApi {
 		return this.documentParser.parseCurrentFilingsXbrl({ xml })
 	}
 
-	public async getDocumentXbrl(params: { url: string } & ParseXbrlOptions) {
+	public async getDocumentXbrl(params: { url: string } & ParseXbrlOptions & { includeReport?: boolean }) {
 		const { url, ...options } = params
 		const xml = await this.getDocumentXMLByUrl({ url })
 		return this.documentParser.parseXbrl({ xml, ...options })
