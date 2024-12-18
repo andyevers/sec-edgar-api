@@ -1,5 +1,5 @@
 import { Form4Data, InsiderTransactionExtended, TransactionCode, XMLParams } from '../../../types'
-import XMLParser from '../XMLParser'
+import XMLParser from '../XMLParserLegacy'
 
 /**
  * Form 4 - Insider Transactions

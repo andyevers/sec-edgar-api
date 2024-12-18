@@ -1,5 +1,5 @@
 import { Form13GData, InstitutionalHolder, XMLParams } from '../../../types'
-import XMLParser from '../XMLParser'
+import XMLParser from '../XMLParserLegacy'
 
 /**
  * Form SC 13G - Institutional Holders

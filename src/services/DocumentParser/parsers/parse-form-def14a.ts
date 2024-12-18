@@ -1,5 +1,5 @@
 import { ExecutiveCompensation, FormDef14aData, Holder, TableData, XMLParams } from '../../../types'
-import XMLParser from '../XMLParser'
+import XMLParser from '../XMLParserLegacy'
 
 /**
  * Form DEF 14a - Proxy Statement

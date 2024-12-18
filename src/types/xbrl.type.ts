@@ -1,12 +1,56 @@
-export interface XbrlLinkbaseDocument {
-	schema?: XbrlLinkbaseSchema
-	linkbase?: XbrlLinkbase
+export interface XbrlContext {
+	id: string
+	entity: {
+		identifier: {
+			value: string
+			scheme: string
+		}
+		segment: {
+			value: string
+			dimension: string
+		}[]
+	}
+	period: {
+		startDate?: string
+		endDate?: string
+		instant?: string
+	}
 }
 
-export interface XbrlLinkbaseSchema {
-	annotation?: XbrlLinkbaseAnnotation
-	import?: XbrlLinkbaseImport[]
-	element?: XbrlLinkbaseElement[]
+export interface XbrlUnit {
+	id: string
+	measure: string
+}
+
+export interface XbrlElement {
+	id: string
+	name: string
+	contextRef: string
+	continuedAt?: string
+	decimals?: string
+	escape?: string
+	format?: string
+	order?: string
+	precision?: string
+	scale?: string
+	sign?: string
+	target?: string
+	text?: string
+	tupleID?: string
+	tupleRef?: string
+	unitRef?: string
+}
+
+export interface XbrlInstance {
+	contexts: XbrlContext[]
+	units: XbrlUnit[]
+	facts: XbrlElement[]
+}
+
+export interface XbrlSchema {
+	annotation?: XbrlSchemaAnnotation
+	import?: XbrlSchemaImport[]
+	element?: XbrlSchemaElement[]
 	targetNamespace?: string
 	elementFormDefault?: string
 	attributeFormDefault?: string
@@ -81,7 +125,6 @@ export interface XML {
 }
 
 export interface XbrlLinkbase {
-	id: string
 	roleRef?: XbrlLinkbaseItemSimple[]
 	arcroleRef?: XbrlLinkbaseItemSimple[]
 	referenceLink?: XbrlLinkbaseItemExtended[]
@@ -95,17 +138,17 @@ export interface XbrlLinkbase {
 	schemaLocation?: string
 }
 
-export interface XbrlLinkbaseAnnotation {
-	appinfo: XbrlLinkbaseAppinfo
+export interface XbrlSchemaAnnotation {
+	appinfo: XbrlSchemaAppinfo
 	documentation?: string
 }
 
-export interface XbrlLinkbaseAppinfo {
+export interface XbrlSchemaAppinfo {
 	roleType: XbrlLinkbaseRoleType[]
 	linkbaseRef: XbrlLinkbaseItemSimple[]
 }
 
-export interface XbrlLinkbaseElement {
+export interface XbrlSchemaElement {
 	name: string
 	id: string
 	type: string
@@ -122,7 +165,7 @@ export interface XbrlLinkbaseElement {
 	annotation?: object
 }
 
-export interface XbrlLinkbaseImport {
+export interface XbrlSchemaImport {
 	namespace: string
 	schemaLocation: string
 }

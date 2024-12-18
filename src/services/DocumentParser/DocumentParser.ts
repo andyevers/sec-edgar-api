@@ -1,5 +1,6 @@
 import { XMLParams } from '../../types'
-import XMLParser from './XMLParser'
+import { ParseXbrlOptions } from './XBRLParser/XBRLParser'
+import XMLParser from './XMLParserLegacy'
 import parsers from './parsers'
 
 interface DocumentParserArgs {
@@ -49,7 +50,11 @@ export default class DocumentParser {
 		return this.parsersByName.parseCurrentFilings(params)
 	}
 
-	public parseCurrentFilingsXBRL(params: XMLParams) {
-		return this.parsersByName.parseCurrentFilingsXBRL(params)
+	public parseCurrentFilingsXbrl(params: XMLParams) {
+		return this.parsersByName.parseCurrentFilingsXbrl(params)
+	}
+
+	public parseXbrl(params: XMLParams & ParseXbrlOptions) {
+		return this.parsersByName.parseXbrl(params)
 	}
 }

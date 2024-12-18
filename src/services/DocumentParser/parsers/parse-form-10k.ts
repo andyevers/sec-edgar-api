@@ -1,5 +1,5 @@
 import { Form10KData, XMLParams } from '../../../types'
-import XMLParser from '../XMLParser'
+import XMLParser from '../XMLParserLegacy'
 
 export function parseForm10k(params: XMLParams, xmlParser = new XMLParser()): Form10KData {
 	const { xml } = params

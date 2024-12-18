@@ -16,6 +16,7 @@ import { FilingListDetails, FilingListItemTranslated, SubmissionList } from '../
 import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
 import DocumentParser from '../DocumentParser'
+import { ParseXbrlOptions } from '../DocumentParser/XBRLParser/XBRLParser'
 import ReportParser from '../ReportParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
 import FilingMapper from './FilingMapper'
@@ -555,7 +556,13 @@ export default class SecEdgarApi {
 		const url = urlByTaxonomy[taxonomy] || urlByTaxonomy.allXbrl
 		const xml = await (this.request(url, true) as Promise<string>)
 
-		return this.documentParser.parseCurrentFilingsXBRL({ xml })
+		return this.documentParser.parseCurrentFilingsXbrl({ xml })
+	}
+
+	public async getDocumentXbrl(params: { url: string } & ParseXbrlOptions) {
+		const { url, ...options } = params
+		const xml = await this.getDocumentXMLByUrl({ url })
+		return this.documentParser.parseXbrl({ xml, ...options })
 	}
 
 	/**
