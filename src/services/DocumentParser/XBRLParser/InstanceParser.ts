@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { XbrlContext, XbrlElement, XbrlInstance, XbrlUnit } from '../../../types/xbrl.type'
+import type { XbrlContext, XbrlElement, XbrlInstance, XbrlUnit } from '../../../types/xbrl.type'
 import XMLParser from '../XMLParser'
 import utilXbrl from './util-xbrl'
 

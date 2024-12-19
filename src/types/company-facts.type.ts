@@ -1,4 +1,4 @@
-import { FiscalPeriod } from './report-raw.type'
+import type { FiscalPeriod } from './report-raw.type'
 
 // items from companyfacts.zip download
 export interface CompanyFactListData {
@@ -79,6 +79,12 @@ export interface FactItem {
 	/** For XBRL reports only */
 	segments?: { value: string; dimension: string }[]
 	uuid?: string
+}
+
+export interface FactItemExtended extends FactItem {
+	isUsedInReport?: boolean
+	decimals?: number
+	scale?: number
 }
 
 export interface FactItemWithFiscals extends FactItem {

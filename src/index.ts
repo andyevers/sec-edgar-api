@@ -16,4 +16,4 @@ const reportParser = new ReportParser()
 const secEdgarApi = new SecEdgarApi()
 
 export { reportParser, secEdgarApi }
-export * from './types'
+export type * from './types'

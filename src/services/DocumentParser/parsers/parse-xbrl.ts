@@ -1,5 +1,11 @@
-import { FactItem, FilingListItemTranslated, FiscalPeriod, ReportRaw, XMLParams } from '../../../types'
-import { XbrlContext } from '../../../types/xbrl.type'
+import type {
+	FactItemExtended,
+	FilingListItemTranslated,
+	FiscalPeriod,
+	ReportRaw,
+	XMLParams,
+	XbrlContext,
+} from '../../../types'
 import { KEY_SPLIT } from '../../../util/constants'
 import { GetDocumentXbrlParams } from '../../SecEdgarApi'
 import XBRLParser, { XbrlParseResult } from '../XBRLParser/XBRLParser'
@@ -15,7 +21,7 @@ function buildReportsFromFacts(params: {
 	filing?: FilingListItemTranslated
 	fiscalPeriod?: FiscalPeriod
 	fiscalYear?: number
-	facts: (FactItem & { decimals?: number; scale?: number })[]
+	facts: FactItemExtended[]
 	pathSeparator: string
 	cik?: number
 }) {
@@ -32,11 +38,9 @@ function buildReportsFromFacts(params: {
 	}
 
 	// if there is a split fact, make sure it's from the current fiscal year
-	const allowedMonthsPriorForSplit = fiscalPeriod === 'FY' ? 12 : 3
 	const splitFact = facts.find(
 		(f) =>
-			f.name.endsWith(KEY_SPLIT) &&
-			isWithinDays({ dateA: f.filed, dateB: filing?.reportDate ?? '', days: allowedMonthsPriorForSplit * 30 }),
+			f.name.endsWith(KEY_SPLIT) && isWithinDays({ dateA: f.filed, dateB: filing?.reportDate ?? '', days: 90 }),
 	)
 
 	const reportFocus: ReportRaw = {
@@ -51,7 +55,7 @@ function buildReportsFromFacts(params: {
 	}
 
 	const reportByDateRange: Record<string, { startDate: string; endDate: string; [k: string]: string | number }> = {}
-	const factByName = new Map<string, FactItem & { decimals?: number; scale?: number }>()
+	const factByName = new Map<string, FactItemExtended>()
 	const roundPlacesByName = new Map<string, number>()
 	const scaleByName = new Map<string, number>()
 	const isFocusFactByDateKey = new Map<string, boolean>()
@@ -63,11 +67,14 @@ function buildReportsFromFacts(params: {
 			endDate: fact.end,
 		}
 
+		const isSplitFact = fact === splitFact
 		const isFocusFact =
 			isFocusFactByDateKey.get(dateKey) ??
-			isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 })
+			(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact)
 
-		isFocusFactByDateKey.set(dateKey, isFocusFact)
+		if (!isSplitFact) {
+			isFocusFactByDateKey.set(dateKey, isFocusFact)
+		}
 
 		const el = fact
 		const scale = Number(el.scale ?? 0) || 0
@@ -109,8 +116,13 @@ function buildReportsFromFacts(params: {
 		factByName.set(prevFactKey, fact)
 
 		reportByDateRange[dateKey][nameKey] = fact.value
+
 		if (isFocusFact) {
+			if (prevFact) prevFact.isUsedInReport = false
+			fact.isUsedInReport = true
 			reportFocus[nameKey] = fact.value
+		} else {
+			fact.isUsedInReport = false
 		}
 	}
 
@@ -119,7 +131,7 @@ function buildReportsFromFacts(params: {
 
 export function parseXbrl(
 	params: XMLParams & GetDocumentXbrlParams,
-): XbrlParseResult & { report: ReportRaw | null; facts: FactItem[]; xml: string } {
+): XbrlParseResult & { report: ReportRaw | null; facts: FactItemExtended[]; xml: string } {
 	const parser = new XBRLParser()
 	const { xml, includeReport = true, ...options } = params
 	const response = parser.parse(xml, options)
@@ -133,14 +145,14 @@ export function parseXbrl(
 	const accessionNumber = response.header.accessionNumber
 	const accessionNumberNoHyphens = accessionNumber.replace(/-/g, '')
 
-	const facts: (FactItem & { scale?: number })[] = []
+	const facts: FactItemExtended[] = []
 	for (const fact of factElements) {
 		const context = contextById.get(fact.contextRef)
 
 		const end = context?.period.endDate ?? context?.period.instant ?? ''
 		const start = context?.period.startDate
 
-		const factParsed: FactItem & { scale?: number; decimals?: number } = {
+		const factParsed: FactItemExtended = {
 			cik: cik,
 			end: end,
 			filed: response.header.filingDate,

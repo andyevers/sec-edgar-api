@@ -1,4 +1,4 @@
-import { FiscalPeriod } from './report-raw.type'
+import type { FiscalPeriod } from './report-raw.type'
 
 export interface ReportTranslated {
 	cik: number

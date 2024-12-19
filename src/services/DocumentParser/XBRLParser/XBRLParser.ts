@@ -1,4 +1,4 @@
-import { XbrlInstance, XbrlLinkbase, XbrlSchema } from '../../../types/xbrl.type'
+import type { XbrlInstance, XbrlLinkbase, XbrlSchema } from '../../../types'
 import DocumentXmlSplitter, { DocumentData } from '../DocumentXmlSplitter'
 import HeaderParser, { XbrlFormHeader } from './HeaderParser'
 import InstanceParser from './InstanceParser'

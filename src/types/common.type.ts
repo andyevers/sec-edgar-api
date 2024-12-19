@@ -1,4 +1,4 @@
-import { FactItem } from './company-facts.type'
+import type { FactItem } from './company-facts.type'
 
 export interface XMLParams {
 	xml: string
@@ -45,14 +45,4 @@ export interface FactGroup {
 	valuePeriodLast: number | string | null
 	valueTrailingFirst: number | string | null
 	valueTrailingLast: number | string | null
-}
-
-export interface FactItemExtended extends FactItem {
-	period: number
-	year: number
-	quarter: number
-	periodValue: number | null
-	trailingValue: number | null
-	splitValue: number | null
-	splitsApplied: number[]
 }

@@ -1,4 +1,4 @@
-import { ReportTranslated } from '../types/report-translated.type'
+import type { ReportTranslated } from '../types/report-translated.type'
 
 /**
  * Checks if any of the array keys exist in the object to assign to the translated key

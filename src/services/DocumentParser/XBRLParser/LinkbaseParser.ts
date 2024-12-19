@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
+import type {
 	XbrlLinkbase,
 	XbrlLinkbaseItemArc,
 	XbrlLinkbaseItemExtended,
 	XbrlLinkbaseItemLocator,
 	XbrlLinkbaseItemResource,
 	XbrlLinkbaseItemSimple,
-} from '../../../types/xbrl.type'
+} from '../../../types'
 import XMLParser from '../XMLParser'
 import utilXbrl from './util-xbrl'
 

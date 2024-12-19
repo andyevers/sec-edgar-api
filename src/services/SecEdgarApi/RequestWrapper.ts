@@ -1,4 +1,4 @@
-import { FilingListItemTranslated } from '../../types/submission.type'
+import type { FilingListItemTranslated } from '../../types/submission.type'
 
 export interface SubmissionRequestWrapperOptions {
 	maxRequests?: number

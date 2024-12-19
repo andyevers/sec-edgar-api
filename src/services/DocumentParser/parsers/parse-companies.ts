@@ -1,5 +1,4 @@
-import { XMLParams } from '../../../types'
-import { CompanySearchResult } from '../../../types/company-search.type'
+import type { CompanySearchResult, XMLParams } from '../../../types'
 import HtmlTableExtractor from '../../HtmlTableExtractor'
 
 export function parseCompanies(params: XMLParams) {

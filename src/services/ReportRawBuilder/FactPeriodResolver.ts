@@ -1,4 +1,4 @@
-import { FiscalPeriod, ReportRaw } from '../../types/report-raw.type'
+import type { FiscalPeriod, ReportRaw } from '../../types/report-raw.type'
 
 type TrippleNestedMap<T> = Map<number, Map<string, Map<number, T>>>
 

@@ -1,5 +1,4 @@
-import { XMLParams } from '../../../types'
-import { InsiderTransaction, Issuer, Owner } from '../../../types/insider-transaction.type'
+import type { InsiderTransaction, Issuer, Owner, XMLParams } from '../../../types'
 import HtmlTableExtractor from '../../HtmlTableExtractor'
 import { TableHTMLData } from '../../HtmlTableExtractor/HtmlTableExtractor'
 
