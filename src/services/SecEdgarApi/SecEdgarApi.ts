@@ -393,7 +393,7 @@ export default class SecEdgarApi {
 	 */
 	public buildDocumentUrl(params: { symbol: string | number; accessionNumber: string; fileName?: string }) {
 		const { symbol, accessionNumber, fileName: fileNameProp } = params
-		const cik = this.getCikString(symbol)
+		const cik = Number(this.getCikString(symbol))
 		const fileName = fileNameProp ?? `${accessionNumber}.txt`
 		return `${this.baseUrlSec}/Archives/edgar/data/${cik}/${accessionNumber.replace(/-/g, '')}/${fileName}`
 	}
@@ -544,7 +544,7 @@ export default class SecEdgarApi {
 	public async getCurrentFilings(params?: GetCurrentFilingsParams) {
 		const { page = 1, itemsPerPage = 100, formType, searchType, symbol } = params ?? {}
 
-		const type = formType?.replace(/\s/, '+') ?? null
+		const type = formType?.trim().replace(/\s/g, '+') ?? null
 		const owner = searchType ?? (formType?.includes(' ') ? 'include' : 'only')
 		const offset = (page - 1) * Math.max(1, itemsPerPage || 100)
 		const cik = symbol ? Number(this.getCikString(symbol)) : null
@@ -563,7 +563,7 @@ export default class SecEdgarApi {
 	/**
 	 * @see https://www.sec.gov/structureddata/rss-feeds-submitted-filings
 	 */
-	public async getCurrentFilingsXBRL(params?: { taxonomy?: 'usGaap' | 'mutualFund' | 'inlineXbrl' | 'allXbrl' }) {
+	public async getCurrentFilingsXbrl(params?: { taxonomy?: 'usGaap' | 'mutualFund' | 'inlineXbrl' | 'allXbrl' }) {
 		const { taxonomy = 'allXbrl' } = params ?? {}
 
 		const urlByTaxonomy = {
