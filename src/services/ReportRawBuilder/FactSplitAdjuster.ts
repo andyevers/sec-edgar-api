@@ -1,4 +1,5 @@
 import { CompanyFactListData, FactGroup, FactItem, FactValue, SplitData } from '../../types'
+import { KEY_SPLIT } from '../../util/constants'
 import FactPeriodResolver from './FactPeriodResolver'
 
 /**
@@ -8,7 +9,7 @@ import FactPeriodResolver from './FactPeriodResolver'
  * each fact.
  */
 export default class FactSplitAdjuster {
-	private readonly keySplit = 'StockholdersEquityNoteStockSplitConversionRatio1'
+	private readonly keySplit = KEY_SPLIT
 
 	private preferFirstValue = true
 

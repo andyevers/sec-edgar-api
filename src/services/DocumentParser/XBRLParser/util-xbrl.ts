@@ -25,13 +25,28 @@ function parseKey(key: string) {
 	return key.split(':').pop()?.replace('@_', '').replace('#', '') ?? ''
 }
 
-const utilType = {
+function extractXbrlObject(value: any) {
+	let xbrl = value
+	if (typeof xbrl !== 'object' || xbrl === null) {
+		return null
+	}
+	for (let i = 0; i < 10; i++) {
+		const xbrlChild = xbrl.XBRL ?? xbrl.xbrl
+		if (xbrlChild) xbrl = xbrlChild
+		else break
+	}
+
+	return xbrl
+}
+
+const utilXbrl = {
 	toArray,
 	toNumber,
 	toObject,
 	toString,
 	toBoolean,
 	parseKey,
+	extractXbrlObject,
 }
 
-export default utilType
+export default utilXbrl

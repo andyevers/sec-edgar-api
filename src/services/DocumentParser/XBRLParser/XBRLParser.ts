@@ -23,7 +23,7 @@ interface XbrlDocument<T> {
 	xbrl: T
 }
 
-export interface ParseXbrlOptions {
+interface ParseXbrlOptions {
 	includeInstance?: boolean
 	includeLinkbases?: boolean
 	includeSchema?: boolean
@@ -39,7 +39,13 @@ export default class XBRLParser {
 	private filterDocuments(documents: DocumentData[]) {
 		const xmlDocs = documents.filter((doc) => doc.fileName.endsWith('.xml') || doc.fileName.endsWith('.xsd'))
 		return {
-			instanceDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_htm.xml')) ?? null,
+			instanceDoc:
+				xmlDocs.find(
+					(doc) =>
+						doc.description.toLowerCase().includes('instance doc') ||
+						doc.fileName.endsWith('_htm.xml') ||
+						(doc.content.includes('<us-gaap') && doc.content.includes('<context')),
+				) ?? null,
 			schemaDoc: xmlDocs.find((doc) => doc.fileName.endsWith('.xsd')) ?? null,
 			linkbasePresentationDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_pre.xml')) ?? null,
 			linkbaseDefinitionDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_def.xml')) ?? null,
@@ -48,7 +54,7 @@ export default class XBRLParser {
 		}
 	}
 
-	private createXbrlDocument<T>(doc: DocumentData | null, xbrl?: T | null): XbrlDocument<T> | null {
+	private createXbrlDocument<T>(doc: DocumentData | null, xbrl: T | null): XbrlDocument<T> | null {
 		if (!doc) return null
 		const { description, fileName, sequence, type } = doc
 		return xbrl ? { fileName, description, sequence, type, xbrl } : null

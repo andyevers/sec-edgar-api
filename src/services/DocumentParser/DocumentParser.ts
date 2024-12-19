@@ -1,5 +1,5 @@
 import { XMLParams } from '../../types'
-import { ParseXbrlOptions } from './XBRLParser/XBRLParser'
+import { GetDocumentXbrlParams } from '../SecEdgarApi'
 import XMLParser from './XMLParserLegacy'
 import parsers from './parsers'
 
@@ -54,7 +54,7 @@ export default class DocumentParser {
 		return this.parsersByName.parseCurrentFilingsXbrl(params)
 	}
 
-	public parseXbrl(params: XMLParams & ParseXbrlOptions & { includeReport?: boolean }) {
+	public parseXbrl(params: XMLParams & GetDocumentXbrlParams) {
 		return this.parsersByName.parseXbrl(params)
 	}
 }

@@ -8,7 +8,7 @@ import {
 	XbrlLinkbaseItemSimple,
 } from '../../../types/xbrl.type'
 import XMLParser from '../XMLParser'
-import utilType from './util-type'
+import utilXbrl from './util-xbrl'
 
 export default class LinkbaseParser {
 	private readonly xmlParser: XMLParser
@@ -19,15 +19,15 @@ export default class LinkbaseParser {
 	}
 
 	public parse(xml: string) {
-		const parsed = this.xmlParser.parse(xml)
-		return this.parseLinkbaseDocument(parsed.XBRL ?? parsed.xbrl ?? parsed)
+		const parsed = utilXbrl.extractXbrlObject(this.xmlParser.parse(xml))
+		return this.parseLinkbaseDocument(parsed)
 	}
 
 	private parseLinkbaseDocument(value: any): XbrlLinkbase | null {
-		value = utilType.toObject(value)
+		value = utilXbrl.toObject(value)
 
 		for (const key in value) {
-			const parsedKey = utilType.parseKey(key)
+			const parsedKey = utilXbrl.parseKey(key)
 			switch (parsedKey) {
 				case 'linkbase':
 					return this.parseLinkbase(value[key])
@@ -40,11 +40,11 @@ export default class LinkbaseParser {
 	private parseItem(
 		value: any,
 	): XbrlLinkbaseItemSimple | XbrlLinkbaseItemLocator | XbrlLinkbaseItemArc | XbrlLinkbaseItemResource {
-		value = utilType.toObject(value)
+		value = utilXbrl.toObject(value)
 		const item: any = {}
 
 		for (const key in value) {
-			const parsedKey = utilType.parseKey(key) as
+			const parsedKey = utilXbrl.parseKey(key) as
 				| keyof XbrlLinkbaseItemSimple
 				| keyof XbrlLinkbaseItemLocator
 				| keyof XbrlLinkbaseItemArc
@@ -52,15 +52,15 @@ export default class LinkbaseParser {
 
 			switch (parsedKey) {
 				case 'closed':
-					item[parsedKey] = utilType.toBoolean(value[key])
+					item[parsedKey] = utilXbrl.toBoolean(value[key])
 					break
 				case 'priority':
 				case 'order':
 				case 'weight':
-					item[parsedKey] = utilType.toNumber(value[key])
+					item[parsedKey] = utilXbrl.toNumber(value[key])
 					break
 				default:
-					item[parsedKey] = utilType.toString(value[key])
+					item[parsedKey] = utilXbrl.toString(value[key])
 					break
 			}
 		}
@@ -69,25 +69,25 @@ export default class LinkbaseParser {
 	}
 
 	private parseLinkbase(value: any): XbrlLinkbase {
-		value = utilType.toObject(value)
+		value = utilXbrl.toObject(value)
 		const linkbase: XbrlLinkbase = {}
 
 		for (const key in value) {
-			const parsedKey = utilType.parseKey(key) as keyof Omit<XbrlLinkbase, 'id'>
+			const parsedKey = utilXbrl.parseKey(key) as keyof Omit<XbrlLinkbase, 'id'>
 			switch (parsedKey) {
 				case 'referenceLink':
 				case 'labelLink':
 				case 'presentationLink':
 				case 'calculationLink':
 				case 'definitionLink':
-					linkbase[parsedKey] = utilType.toArray(value[key]).map((v: any) => this.parseItemExtended(v))
+					linkbase[parsedKey] = utilXbrl.toArray(value[key]).map((v: any) => this.parseItemExtended(v))
 					break
 				case 'roleRef':
 				case 'arcroleRef':
-					linkbase[parsedKey] = utilType.toArray(value[key]).map((v: any) => this.parseItem(v))
+					linkbase[parsedKey] = utilXbrl.toArray(value[key]).map((v: any) => this.parseItem(v))
 					break
 				default:
-					linkbase[parsedKey] = utilType.toString(value[key])
+					linkbase[parsedKey] = utilXbrl.toString(value[key])
 					break
 			}
 		}
@@ -101,7 +101,7 @@ export default class LinkbaseParser {
 		}
 
 		for (const key in value) {
-			const parsedKey = utilType.parseKey(key) as keyof Omit<XbrlLinkbaseItemExtended, 'type'>
+			const parsedKey = utilXbrl.parseKey(key) as keyof Omit<XbrlLinkbaseItemExtended, 'type'>
 			switch (parsedKey) {
 				case 'loc':
 				case 'calculationArc':
@@ -111,10 +111,10 @@ export default class LinkbaseParser {
 				case 'footnoteArc':
 				case 'label':
 				case 'footnote':
-					item[parsedKey] = utilType.toArray(value[key]).map((v: any) => this.parseItem(v))
+					item[parsedKey] = utilXbrl.toArray(value[key]).map((v: any) => this.parseItem(v))
 					break
 				default:
-					item[parsedKey] = utilType.toString(value[key])
+					item[parsedKey] = utilXbrl.toString(value[key])
 					break
 			}
 		}

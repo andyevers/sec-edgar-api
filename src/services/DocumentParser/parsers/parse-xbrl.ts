@@ -1,6 +1,8 @@
 import { FactItem, FilingListItemTranslated, FiscalPeriod, ReportRaw, XMLParams } from '../../../types'
 import { XbrlContext } from '../../../types/xbrl.type'
-import XBRLParser, { ParseXbrlOptions, XbrlParseResult } from '../XBRLParser/XBRLParser'
+import { KEY_SPLIT } from '../../../util/constants'
+import { GetDocumentXbrlParams } from '../../SecEdgarApi'
+import XBRLParser, { XbrlParseResult } from '../XBRLParser/XBRLParser'
 
 function isWithinDays(params: { dateA: string | number | Date; dateB: string | number | Date; days: number }) {
 	const { dateA, dateB, days } = params
@@ -29,14 +31,22 @@ function buildReportsFromFacts(params: {
 		fiscalYear,
 	}
 
+	// if there is a split fact, make sure it's from the current fiscal year
+	const allowedMonthsPriorForSplit = fiscalPeriod === 'FY' ? 12 : 3
+	const splitFact = facts.find(
+		(f) =>
+			f.name.endsWith(KEY_SPLIT) &&
+			isWithinDays({ dateA: f.filed, dateB: filing?.reportDate ?? '', days: allowedMonthsPriorForSplit * 30 }),
+	)
+
 	const reportFocus: ReportRaw = {
 		cik: Number(cik ?? reportFactValues.cik),
 		dateFiled: filing?.filingDate ?? '',
 		dateReport: String(filing?.reportDate ?? reportFactValues.dateReport),
 		fiscalPeriod: (fiscalPeriod ?? reportFactValues.fiscalPeriod) as FiscalPeriod,
 		fiscalYear: Number(fiscalYear ?? reportFactValues.fiscalYear),
-		splitDate: null,
-		splitRatio: null,
+		splitDate: splitFact?.end ?? null,
+		splitRatio: splitFact?.value ? Number(splitFact.value) : null,
 		url: filing?.url ?? '',
 	}
 
@@ -108,7 +118,7 @@ function buildReportsFromFacts(params: {
 }
 
 export function parseXbrl(
-	params: XMLParams & ParseXbrlOptions & { includeReport?: boolean },
+	params: XMLParams & GetDocumentXbrlParams,
 ): XbrlParseResult & { report: ReportRaw | null; facts: FactItem[] } {
 	const parser = new XBRLParser()
 	const { xml, includeReport = true, ...options } = params
@@ -183,6 +193,6 @@ export function parseXbrl(
 	return {
 		...response,
 		facts: factsFiltered,
-		report: reportFocus,
+		report: factsFiltered.length > 0 ? reportFocus : null,
 	}
 }

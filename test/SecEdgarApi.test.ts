@@ -63,7 +63,7 @@ describe('SecEdgarApi', () => {
 		const filings = submissionsResponse.filings
 
 		const fnGetDocumentXML = jest
-			.spyOn(secEdgarApi, 'getDocumentXMLByUrl')
+			.spyOn(secEdgarApi, 'getDocument')
 			.mockReturnValue(new Promise((resolve) => resolve(form13gXML)))
 
 		const request = secEdgarApi.createRequestInstitutionalHolders({ symbol: 'AAPL', filings })

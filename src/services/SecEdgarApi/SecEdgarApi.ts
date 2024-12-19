@@ -16,7 +16,6 @@ import { FilingListDetails, FilingListItemTranslated, SubmissionList } from '../
 import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
 import DocumentParser from '../DocumentParser'
-import { ParseXbrlOptions } from '../DocumentParser/XBRLParser/XBRLParser'
 import ReportParser from '../ReportParser'
 import ReportWrapper from '../ReportParser/ReportWrapper'
 import FilingMapper from './FilingMapper'
@@ -76,13 +75,6 @@ export interface GetFactFrameParams {
 	taxonomy?: 'us-gaap' | 'dei' | 'invest' | string
 }
 
-export interface GetDocumentXMLParams {
-	/** symbol or cik */
-	symbol: string | number
-	accessionNumber: string
-	primaryDocument: string
-}
-
 export interface GetInsiderTransactionsParams {
 	page: number
 	symbol: string | number
@@ -107,6 +99,16 @@ interface GetCurrentFilingsParams {
 	itemsPerPage?: number
 	symbol?: string | number
 	searchType?: 'include' | 'exclude' | 'only'
+}
+
+export interface GetDocumentXbrlParams {
+	url?: string
+	symbol?: string | number
+	accessionNumber?: string
+	includeReport?: boolean
+	includeInstance?: boolean
+	includeLinkbases?: boolean
+	includeSchema?: boolean
 }
 
 /**
@@ -348,7 +350,8 @@ export default class SecEdgarApi {
 	}
 
 	/**
-	 * Gets a raw xml document string. the parameters are found in the submission list response.
+	 * If url is provided, all other props are ignored. Otherwise, both accessionNumber
+	 * and symbol (symbol or cik) are required. provide fileName if different from `${accessionNumber}.txt`
 	 *
 	 * Some form types can be parsed using the DocumentParser such as form 4 (insider transactions) and form 13g (institutional holders)
 	 *
@@ -356,26 +359,43 @@ export default class SecEdgarApi {
 	 *
 	 * @see https://www.sec.gov/forms for a list of form types
 	 */
-	public async getDocumentXML(params: GetDocumentXMLParams) {
-		const { accessionNumber, primaryDocument, symbol } = params
-		const cik = this.cikBySymbol[symbol]
-		return this.request<string>(
-			`${this.baseUrlSec}/Archives/edgar/data/${cik}/${accessionNumber.replace(/-/g, '')}/${primaryDocument}`,
-			true,
-		)
+	public async getDocument(params: {
+		url?: string
+		symbol?: string | number
+		accessionNumber?: string
+		fileName?: string
+	}) {
+		const { accessionNumber = '', fileName, symbol = '', url: urlProp } = params
+
+		if (!urlProp && (!accessionNumber || !symbol)) {
+			throw new Error('Must provide either url or (a)ccessionNumber and symbol)')
+		}
+
+		const url = urlProp ?? this.buildDocumentUrl({ symbol, accessionNumber, fileName })
+		return this.request<string>(url, true)
 	}
 
 	/**
-	 * Gets a raw xml document string. the url is found in the submission list response. (response.filings.recentTranslated.url)
+	 * Fetches SEC document and parses XBRL data. If url is provided, symbol and accessionNumber are ignored.
 	 *
-	 * Some form types can be parsed using the DocumentParser such as form 4 (insider transactions) and form 13g (institutional holders)
-	 *
-	 * endpoint: `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNumber}/${primaryDocument}`
-	 *
-	 * @see https://www.sec.gov/forms for a list of form types
+	 * Use "include" params to specify what to parse. If not provided, all data is parsed.
 	 */
-	public async getDocumentXMLByUrl(params: { url: string }) {
-		return this.request<string>(params.url, true)
+	public async getDocumentXbrl(params: GetDocumentXbrlParams) {
+		const { url, accessionNumber, symbol, ...options } = params
+		const xml = await this.getDocument({ url, accessionNumber, symbol })
+		return this.documentParser.parseXbrl({ xml, ...options })
+	}
+
+	/**
+	 * Builds a url for a document. If fileName is not provided, it defaults to `${accessionNumber}.txt`
+	 *
+	 * format: `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNumberNoHyphen)}/${fileNameAccessionFile}`
+	 */
+	public buildDocumentUrl(params: { symbol: string | number; accessionNumber: string; fileName?: string }) {
+		const { symbol, accessionNumber, fileName: fileNameProp } = params
+		const cik = this.getCikString(symbol)
+		const fileName = fileNameProp ?? `${accessionNumber}.txt`
+		return `${this.baseUrlSec}/Archives/edgar/data/${cik}/${accessionNumber.replace(/-/g, '')}/${fileName}`
 	}
 
 	/**
@@ -393,7 +413,7 @@ export default class SecEdgarApi {
 		const submissions = this.getCreateRequestSubmissions(params, ['4', '4/A', '5', '5/A'])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
-			this.documentParser.parseForm4({ xml: await this.getDocumentXMLByUrl(params) })
+			this.documentParser.parseForm4({ xml: await this.getDocument(params) })
 
 		return new SubmissionRequestWrapper<Form4Data>({
 			submissions,
@@ -420,7 +440,7 @@ export default class SecEdgarApi {
 		const submissions = this.getCreateRequestSubmissions(params, ['SC 13G', 'SC 13G/A'])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
-			this.documentParser.parseForm13g({ xml: await this.getDocumentXMLByUrl(params) })
+			this.documentParser.parseForm13g({ xml: await this.getDocument(params) })
 
 		return new SubmissionRequestWrapper<Form13GData>({
 			submissions,
@@ -454,7 +474,7 @@ export default class SecEdgarApi {
 		])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
-			this.documentParser.parseForm10k({ xml: await this.getDocumentXMLByUrl(params) })
+			this.documentParser.parseForm10k({ xml: await this.getDocument(params) })
 
 		return new SubmissionRequestWrapper<Form10KData>({
 			submissions,
@@ -478,7 +498,7 @@ export default class SecEdgarApi {
 		const submissions = this.getCreateRequestSubmissions(params, ['DEF 14A'])
 		const options = { maxRequests: params.maxRequests }
 		const sendRequest = async (params: SendRequestParams) =>
-			this.documentParser.parseFormDef14a({ xml: await this.getDocumentXMLByUrl(params) })
+			this.documentParser.parseFormDef14a({ xml: await this.getDocument(params) })
 
 		return new SubmissionRequestWrapper<FormDef14aData>({
 			submissions,
@@ -557,12 +577,6 @@ export default class SecEdgarApi {
 		const xml = await (this.request(url, true) as Promise<string>)
 
 		return this.documentParser.parseCurrentFilingsXbrl({ xml })
-	}
-
-	public async getDocumentXbrl(params: { url: string } & ParseXbrlOptions & { includeReport?: boolean }) {
-		const { url, ...options } = params
-		const xml = await this.getDocumentXMLByUrl({ url })
-		return this.documentParser.parseXbrl({ xml, ...options })
 	}
 
 	/**
