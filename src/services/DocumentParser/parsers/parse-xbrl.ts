@@ -119,7 +119,7 @@ function buildReportsFromFacts(params: {
 
 export function parseXbrl(
 	params: XMLParams & GetDocumentXbrlParams,
-): XbrlParseResult & { report: ReportRaw | null; facts: FactItem[] } {
+): XbrlParseResult & { report: ReportRaw | null; facts: FactItem[]; xml: string } {
 	const parser = new XBRLParser()
 	const { xml, includeReport = true, ...options } = params
 	const response = parser.parse(xml, options)
@@ -194,5 +194,6 @@ export function parseXbrl(
 		...response,
 		facts: factsFiltered,
 		report: factsFiltered.length > 0 ? reportFocus : null,
+		xml,
 	}
 }
