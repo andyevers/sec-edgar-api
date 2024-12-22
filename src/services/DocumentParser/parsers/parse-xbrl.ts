@@ -10,6 +10,12 @@ import { KEY_SPLIT } from '../../../util/constants'
 import { GetDocumentXbrlParams } from '../../SecEdgarApi'
 import XBRLParser, { XbrlParseResult } from '../XBRLParser/XBRLParser'
 
+export interface DocumentXbrlResult extends XbrlParseResult {
+	report: ReportRaw | null
+	facts: FactItemExtended[]
+	xml: string
+}
+
 function isWithinDays(params: { dateA: string | number | Date; dateB: string | number | Date; days: number }) {
 	const { dateA, dateB, days } = params
 	const timeDiff = Math.abs(new Date(dateA).getTime() - new Date(dateB).getTime())
@@ -129,9 +135,7 @@ function buildReportsFromFacts(params: {
 	return { reportFocus, reportByDateRange, factsFiltered: Array.from(factByName.values()) }
 }
 
-export function parseXbrl(
-	params: XMLParams & GetDocumentXbrlParams,
-): XbrlParseResult & { report: ReportRaw | null; facts: FactItemExtended[]; xml: string } {
+export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXbrlResult {
 	const parser = new XBRLParser()
 	const { xml, includeReport = true, ...options } = params
 	const response = parser.parse(xml, options)

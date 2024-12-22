@@ -141,7 +141,7 @@ export default class ReportRawBuilder {
 		})
 
 		factGroupsByReportKey.forEach((groups) => {
-			const groupWithDates = groups.find((g) => g.reportEnd)!
+			const groupWithDates = groups.find((g) => g.reportEnd)
 			if (!groupWithDates) return
 
 			const keyYearQuarter = `${groupWithDates.fiscalYear}_${groupWithDates.quarter}`

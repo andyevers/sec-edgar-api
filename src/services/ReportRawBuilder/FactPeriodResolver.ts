@@ -260,26 +260,7 @@ export default class FactPeriodResolver {
 				for (let i = 0; i < 4; i++) {
 					const bucketSum = this.sumByQuarterByPropertyByYear.get(year)?.get(propertyName)
 
-					const bucketQuarter = this.getOrSetBucketArr(
-						this.valueByQuarterByPropertyByYear,
-						year,
-						propertyName,
-					)
-
-					if (bucketSum && !bucketSum.has(i)) {
-						let prevSum = 0
-						let quarterSum = 0
-						for (let j = 0; j < i; j++) {
-							prevSum = quarterSum
-							quarterSum = bucketSum.get(j) ?? quarterSum
-						}
-
-						bucketSum.set(i, quarterSum)
-						bucketQuarter.set(i, quarterSum - prevSum)
-					}
-
 					const value = bucketSum?.get(i)
-
 					if (value === undefined) continue
 
 					const report = this.getOrSetReport({ year, quarter: i + 1 })

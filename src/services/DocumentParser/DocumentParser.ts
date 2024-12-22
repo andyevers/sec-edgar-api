@@ -2,6 +2,7 @@ import { XMLParams } from '../../types'
 import { GetDocumentXbrlParams } from '../SecEdgarApi'
 import XMLParser from './XMLParserLegacy'
 import parsers from './parsers'
+import { DocumentXbrlResult } from './parsers/parse-xbrl'
 
 interface DocumentParserArgs {
 	parser?: XMLParser
@@ -54,7 +55,7 @@ export default class DocumentParser {
 		return this.parsersByName.parseCurrentFilingsXbrl(params)
 	}
 
-	public parseXbrl(params: XMLParams & GetDocumentXbrlParams) {
+	public parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXbrlResult {
 		return this.parsersByName.parseXbrl(params)
 	}
 }
