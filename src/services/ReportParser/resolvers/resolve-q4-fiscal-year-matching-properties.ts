@@ -1,4 +1,4 @@
-import { ReportTranslated } from '../../../types'
+import type { ReportTranslated } from '../../../types'
 import ReportWrapper from '../ReportWrapper'
 
 /**
@@ -29,7 +29,6 @@ export function resolveQ4FiscalYearMatchingProperties(reportWrapper: ReportWrapp
 		'liabilityNonCurrentDebt',
 		'liabilityTotal',
 		'equityRetainedEarnings',
-		'equityStockPreferred',
 		'equityTotal',
 		'dateFiled',
 		'dateReport',

@@ -56,7 +56,6 @@ interface ReportTranslated {
 
 	equityTotal: number | null
 	equityRetainedEarnings: number | null
-	equityStockPreferred: number | null
 
 	sharesOutstanding: number | null
 	sharesOutstandingDiluted: number | null
@@ -83,16 +82,21 @@ interface ReportTranslated {
 	expenseDepreciationAccumulated: number | null
 	expenseStockCompensation: number | null
 	expenseNonCashOther: number | null
+	expenseSellingGeneralAdministrative: number | null
 
 	incomeOperating: number | null
 	incomeNet: number | null
+	incomePretax: number | null
 
 	cashFlowFree: number | null
 	cashFlowDividendsPaid: number | null
 	cashFlowDividendsPaidPreferred: number | null
 
-	cashFlowCapex: number | null
 	cashFlowOperating: number | null
+	cashFlowInvesting: number | null
+	cashFlowFinancing: number | null
+
+	cashFlowCapex: number | null
 	cashFlowDeferredTax: number | null
 
 	cashFlowWorkingCapitalNonCash: number | null

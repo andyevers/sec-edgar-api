@@ -1,4 +1,4 @@
-import { ReportTranslated } from '../../../types'
+import type { ReportTranslated } from '../../../types'
 import ReportWrapper from '../ReportWrapper'
 
 /**

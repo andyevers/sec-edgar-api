@@ -1,4 +1,4 @@
-import { CompanyFactListData, FactGroup, FactItem, FactValue, SplitData } from '../../types'
+import type { CompanyFactListData, FactGroup, FactItem, FactValue, SplitData } from '../../types'
 import { KEY_SPLIT } from '../../util/constants'
 import FactPeriodResolver from './FactPeriodResolver'
 

@@ -1,10 +1,10 @@
-import { CompanyFactListData, FactGroup, FactItem, FiscalPeriod, ReportRaw, SplitData } from '../../types'
+import type { CompanyFactListData, FactGroup, FactItem, FiscalPeriod, ReportRaw, SplitData } from '../../types'
 import FactFiscalCalculator, { SetReportDatesParams } from './FactFiscalCalculator'
 import FactGrouper from './FactGrouper'
 import FactRecordBuilder from './FactRecordBuilder'
 import FactSplitAdjuster from './FactSplitAdjuster'
 
-interface BuildReportsParams {
+export interface BuildReportsParams {
 	facts: FactItem[]
 	/**
 	 * for more accurate dates, add this. Otherwise, dates will be inferred

@@ -1,4 +1,4 @@
-import { CompanyFactListData, FactItem } from '../../types'
+import type { CompanyFactListData, FactItem } from '../../types'
 
 /**
  * Builds an array of fact records.

@@ -1,4 +1,4 @@
-import { ReportTranslated } from '../../types'
+import type { ReportTranslated } from '../../types'
 
 type ExtendableReportProxy = {
 	new (report: ReportTranslated): ReportTranslated

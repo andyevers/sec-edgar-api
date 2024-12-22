@@ -1,3 +1,5 @@
+import type { FactItem, FilingListItemTranslated } from '../../types'
+
 export interface SetReportDatesParams {
 	year: number
 	quarter: number
@@ -22,6 +24,50 @@ export default class FactFiscalCalculator {
 	private readonly filedDateCountByEndDate = new Map<string, Map<string, number>>()
 
 	private didResolve = false
+
+	constructor(params?: {
+		facts?: Pick<FactItem, 'end' | 'filed'>[]
+		filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
+	}) {
+		const { facts = [], filings = [] } = params ?? {}
+		if (filings.length > 0) {
+			this.useFilingsForDates({ filings })
+		}
+
+		facts.forEach((fact) => this.add(fact))
+	}
+
+	public useFilingsForDates(params: {
+		filings: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
+	}) {
+		const { filings } = params
+
+		const endDateByYear = new Map<number, Date>()
+
+		filings.forEach(({ reportDate, form }) => {
+			if (form === '10-K' || form === '20-F') {
+				endDateByYear.set(Number(reportDate.substring(0, 4)), new Date(reportDate))
+			}
+		})
+
+		filings.forEach((filing) => {
+			if (filing.form === '10-K' || filing.form === '10-Q' || filing.form === '20-F' || filing.form === '40-F') {
+				const { quarter, year } = this.getFiscalYearQuarter({
+					dateStr: filing.reportDate,
+					endDateByYear,
+				})
+
+				this.setReportDates({
+					accn: filing.accessionNumber,
+					end: filing.reportDate,
+					filed: filing.filingDate,
+					isAnnual: filing.form === '10-K' || filing.form === '20-F',
+					quarter,
+					year,
+				})
+			}
+		})
+	}
 
 	public add(fact: { end: string; filed: string }) {
 		const { end, filed } = fact

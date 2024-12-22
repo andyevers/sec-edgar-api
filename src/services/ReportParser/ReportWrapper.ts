@@ -1,4 +1,4 @@
-import { FiscalPeriod, ReportRaw, ReportTranslated } from '../../types'
+import type { FiscalPeriod, ReportRaw, ReportTranslated } from '../../types'
 import ReportTranslatedProxy from './ReportTranslatedProxy'
 
 /**

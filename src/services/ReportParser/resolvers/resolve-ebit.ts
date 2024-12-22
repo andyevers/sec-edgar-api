@@ -7,6 +7,14 @@ export function resolveEbit(report: ReportWrapper): void {
 		return
 	}
 
+	if (!report.ebit && report.incomeNet && report.expenseTax) {
+		report.ebit = report.incomeNet + report.expenseTax
+	}
+
+	if (!report.ebitda && report.ebit && report.expenseDepreciation) {
+		report.ebitda = report.ebit + report.expenseDepreciation
+	}
+
 	const { ebit, expenseDepreciation, ebitda } = report as ExcludeNulls<typeof report>
 	const nullKey = getSingleNullKey({ ebit, expenseDepreciation, ebitda })
 

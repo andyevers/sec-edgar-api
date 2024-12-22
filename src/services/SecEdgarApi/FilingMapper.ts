@@ -1,4 +1,4 @@
-import { FilingListDetails, FilingListItemTranslated } from '../../types'
+import type { FilingListDetails, FilingListItemTranslated } from '../../types'
 
 export default class FilingMapper {
 	public mapFilingListDetails(cik: string | number, filingListDetails: FilingListDetails) {

@@ -1,14 +1,18 @@
-import { CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
+import type { CalculationMap, CompanyFactListData, ReportRaw, ReportTranslated } from '../../types'
+import { calculationMapCondensed } from '../../util/calculation-map'
 import _keyTranslator from '../../util/key-translations'
+import { utilMap } from '../../util/util-map'
 import ReportRawBuilder from '../ReportRawBuilder'
-import { GetReportsRawParams } from '../SecEdgarApi'
+import { BuildReportsParams } from '../ReportRawBuilder/ReportRawBuilder'
 import PropertyResolver from './PropertyResolver'
+import ReportResolvable from './ReportResolvable'
 import ReportWrapper from './ReportWrapper'
 
 interface ReportParserArgs {
 	reportBuilder?: ReportRawBuilder
 	propertyResolver?: PropertyResolver
 	keyTranslator?: Record<string, string[]>
+	defaultCalculationMap?: CalculationMap<ReportTranslated>
 }
 
 type TranslateRawReportsCallback<T> = (
@@ -24,22 +28,30 @@ export default class ReportParser {
 	private readonly keyTranslator: Record<string, string[]>
 	private readonly propertyResolver: PropertyResolver
 	private readonly reportBuilder: ReportRawBuilder
+	private defaultCalculationMap: CalculationMap<ReportTranslated>
 
 	constructor(args?: ReportParserArgs) {
 		const {
 			propertyResolver = new PropertyResolver(),
 			reportBuilder = new ReportRawBuilder(),
 			keyTranslator = _keyTranslator,
+			defaultCalculationMap = utilMap.expandMap(calculationMapCondensed),
 		} = args ?? {}
 		this.keyTranslator = keyTranslator
 		this.propertyResolver = propertyResolver
 		this.reportBuilder = reportBuilder
+		this.defaultCalculationMap = defaultCalculationMap
 	}
 
 	/**
 	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
+	 *
+	 * @deprecated Formerly parseReportsFromRaw. Will be removed in future version.
 	 */
-	public parseReportsFromRaw(params: { reportsRaw: ReportRaw[]; usePropertyResolver?: boolean }): ReportWrapper[] {
+	public parseReportsFromRawLegacy(params: {
+		reportsRaw: ReportRaw[]
+		usePropertyResolver?: boolean
+	}): ReportWrapper[] {
 		const { reportsRaw, usePropertyResolver = true } = params
 		const reportByYearQuarter = new Map<string, ReportWrapper>()
 
@@ -62,39 +74,63 @@ export default class ReportParser {
 	}
 
 	/**
+	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
+	 */
+	public parseReportsFromRaw<T = ReportTranslated>(params: {
+		reportsRaw: ReportRaw[]
+		calculationMap?: CalculationMap<T>
+	}): (ReportRaw & T)[] {
+		const { reportsRaw, calculationMap } = params
+
+		const calcMap = calculationMap ?? this.defaultCalculationMap
+		return reportsRaw.map((report) => {
+			const reportNew: ReportRaw = {
+				cik: report.cik,
+				dateFiled: report.dateFiled,
+				dateReport: report.dateReport,
+				fiscalPeriod: report.fiscalPeriod,
+				url: report.url,
+				fiscalYear: report.fiscalYear,
+				splitDate: report.splitDate,
+				splitRatio: report.splitRatio,
+			}
+
+			const reportResolvable = new ReportResolvable({
+				report,
+				calculationMap: calcMap,
+			})
+
+			for (const key in calcMap) {
+				const value = reportResolvable.get(key) ?? null
+				reportNew[key] = value as string | number | null
+			}
+
+			return reportNew as T & ReportRaw
+		})
+	}
+
+	/**
 	 * Parse raw reports
 	 *
 	 * @see https://www.sec.gov/edgar/sec-api-documentation
 	 */
 	public parseReportsRaw(
 		companyFactListData: CompanyFactListData,
-		options: Omit<GetReportsRawParams, 'symbol'> = {},
+		options: Omit<BuildReportsParams, 'facts'> & { includeNamePrefix?: boolean },
 	): ReportRaw[] {
-		const { adjustForSplits, resolvePeriodValues, includeNamePrefix } = options
+		const { includeNamePrefix } = options
 		const { facts } = this.reportBuilder.createFacts(companyFactListData, includeNamePrefix)
 		return this.reportBuilder.buildReports({
 			facts,
-			adjustForSplits,
-			resolvePeriodValues,
+			...options,
 		})
 	}
 
 	/**
-	 * parseReportsRaw but removes meta data from the report
+	 * Builds ReportRaw[] from facts
 	 */
-	public parseReportsRawNoMeta(companyFactListData: CompanyFactListData): Record<string, number>[] {
-		const reportsRaw = this.parseReportsRaw(companyFactListData)
-		reportsRaw.forEach((reportRaw) => {
-			const report = reportRaw as Partial<ReportRaw>
-			delete report.dateFiled
-			delete report.dateReport
-			delete report.fiscalPeriod
-			delete report.fiscalYear
-			delete report.splitRatio
-			delete report.splitDate
-		})
-
-		return reportsRaw as unknown as Record<string, number>[]
+	public buildReports(params: BuildReportsParams): ReportRaw[] {
+		return this.reportBuilder.buildReports(params)
 	}
 
 	/**

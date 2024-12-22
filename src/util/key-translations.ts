@@ -104,22 +104,18 @@ const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 		'EquityAttributableToOwnersOfParent',
 	],
 	equityRetainedEarnings: ['RetainedEarningsAccumulatedDeficit', 'RetainedEarnings'],
-	equityStockPreferred: [
-		// TODO: Add this
-	],
 
 	sharesOutstanding: ['WeightedAverageNumberOfSharesOutstandingBasic', 'CommonStockSharesOutstanding'],
 	sharesOutstandingDiluted: ['WeightedAverageNumberOfDilutedSharesOutstanding'],
 	eps: ['EarningsPerShareBasic', 'EarningsPerShareBasicAndDiluted'],
 	epsDiluted: ['EarningsPerShareDiluted', 'EarningsPerShareBasicAndDiluted'],
 
-	ebit: ['OperatingIncomeLoss'],
+	ebit: [], // Calculated property only. This is not provided in the reports
 	ebitda: [],
 
 	profitGross: ['GrossProfit'],
 
 	revenueTotal: [
-		// 'RevenueFromContractWithCustomerExcludingAssessedTax',
 		'RevenueFromContractWithCustomerExcludingAssessedTax',
 		'Revenues',
 		'RevenueFromContractWithCustomerIncludingAssessedTax',
@@ -140,8 +136,8 @@ const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 		'ResearchAndDevelopmentExpenseSoftwareExcludingAcquiredInProcessCost',
 	],
 	expenseInterest: [
-		'InterestIncomeExpenseNet',
 		'InterestExpense',
+		'InterestIncomeExpenseNet',
 		'InterestIncomeExpenseNonoperatingNet',
 		'InterestRevenueExpenseNet',
 	],
@@ -157,6 +153,7 @@ const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 	expenseDepreciationAccumulated: ['AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment'],
 	expenseTax: ['IncomeTaxExpenseBenefit', 'IncomeTaxExpenseContinuingOperations'],
 	expenseNonCashOther: ['OtherNoncashIncomeExpense'],
+	expenseSellingGeneralAdministrative: ['SellingGeneralAndAdministrativeExpense'],
 	incomeOperating: [
 		'OperatingIncomeLoss',
 		'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
@@ -175,11 +172,16 @@ const keyTranslations: Record<keyof ReportTranslated, string[]> = {
 	cashFlowDividendsPaid: ['PaymentsOfDividendsCommonStock', 'PaymentsOfDividends'],
 	cashFlowDividendsPaidPreferred: ['DividendsPreferredStock'],
 	cashFlowCapex: ['PaymentsToAcquirePropertyPlantAndEquipment'],
+
 	cashFlowOperating: ['NetCashProvidedByUsedInOperatingActivities'],
+	cashFlowInvesting: ['NetCashProvidedByUsedInInvestingActivities'],
+	cashFlowFinancing: ['NetCashProvidedByUsedInFinancingActivities'],
+
 	cashFlowDeferredTax: ['DeferredIncomeTaxExpenseBenefit'],
 
 	cashFlowWorkingCapitalNonCash: [],
 	expenseStockCompensation: ['AllocatedShareBasedCompensationExpense'],
+	incomePretax: [],
 }
 
 export default keyTranslations

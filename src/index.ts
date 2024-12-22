@@ -1,5 +1,7 @@
 import ReportParser from './services/ReportParser'
 import SecEdgarApi from './services/SecEdgarApi'
+import ReportResolvable from './services/ReportParser/ReportResolvable'
+import { utilMap } from './util/util-map'
 
 /**
  * Takes company facts data from the SEC and translates them to
@@ -15,5 +17,5 @@ const reportParser = new ReportParser()
  */
 const secEdgarApi = new SecEdgarApi()
 
-export { reportParser, secEdgarApi }
+export { reportParser, secEdgarApi, ReportResolvable, utilMap }
 export type * from './types'

@@ -14,6 +14,7 @@ import type {
 	FilingListDetails,
 	FilingListItemTranslated,
 	SubmissionList,
+	CalculationMap,
 } from '../../types'
 import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
@@ -298,15 +299,42 @@ export default class SecEdgarApi {
 	 * Parses reports from company facts. Calculates missing properties and uses a single interface
 	 * for all reports. This includes only 10-K and 10-Q annual and quarterly reports. To include
 	 * all reports, use getReportsRaw.
+	 *
+	 * @deprecated Formerly getReports. This will be removed in a future version.
 	 */
-	public async getReports<T extends GetReportsParams>(
+	public async getReportsLegacy<T extends GetReportsParams>(
 		params: T,
 	): Promise<T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]> {
 		const { withWrapper = false, usePropertyResolver = true } = params
 		const reportsRaw = await this.getReportsRaw({ ...params, includeNamePrefix: false })
-		const reportsWithWrapper = this.reportParser.parseReportsFromRaw({ reportsRaw, usePropertyResolver })
+		const reportsWithWrapper = this.reportParser.parseReportsFromRawLegacy({ reportsRaw, usePropertyResolver })
 		const reports = withWrapper ? reportsWithWrapper : reportsWithWrapper.map((report) => report.getReport())
 		return reports as T['withWrapper'] extends true ? ReportWrapper[] : ReportTranslated[]
+	}
+
+	/**
+	 * Note: Properties that are not provied from report are calculated an may not be accurate,
+	 * verify results finance.yahoo.com (ex: https://finance.yahoo.com/quote/AAPL/financials)
+	 *
+	 * Please contribute to improve resolving report properties: https://github.com/andyevers/sec-edgar-api
+	 *
+	 * Parses reports from company facts. Calculates missing properties and uses a single interface
+	 * for all reports. This includes only 10-K and 10-Q annual and quarterly reports. To include
+	 * all reports, use getReportsRaw.
+	 */
+	public async getReports<R = ReportTranslated>(params: {
+		symbol: string | number
+		adjustForSplits?: boolean
+		resolvePeriodValues?: boolean
+		calculationMap?: CalculationMap<R>
+	}): Promise<(typeof params.calculationMap extends undefined ? ReportTranslated : ReportRaw & R)[]> {
+		const { calculationMap } = params
+		const reportsRaw = await this.getReportsRaw({ ...params, includeNamePrefix: true })
+
+		return this.reportParser.parseReportsFromRaw({
+			reportsRaw,
+			calculationMap,
+		}) as (typeof params.calculationMap extends undefined ? ReportTranslated : ReportRaw & R)[]
 	}
 
 	/**

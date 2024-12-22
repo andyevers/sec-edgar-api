@@ -1,4 +1,4 @@
-import { FactItem, FactGroup, SplitData } from '../../types'
+import type { FactItem, FactGroup, SplitData } from '../../types'
 import FactFiscalCalculator from './FactFiscalCalculator'
 import FactPeriodResolver from './FactPeriodResolver'
 import FactSplitAdjuster from './FactSplitAdjuster'
