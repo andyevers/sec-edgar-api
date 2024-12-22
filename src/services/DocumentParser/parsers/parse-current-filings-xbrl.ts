@@ -70,6 +70,7 @@ export function parseCurrentFilingsXbrl(params: XMLParams): CurrentFilingsXBRL {
 				case 'item': {
 					result.items.push({
 						title: '',
+						url: '',
 						companyName: '',
 						cikNumber: 0,
 						link: '',
@@ -102,6 +103,14 @@ export function parseCurrentFilingsXbrl(params: XMLParams): CurrentFilingsXBRL {
 				}
 			}
 		},
+	})
+
+	// add url to each filing
+	result.items.forEach((item) => {
+		const { cikNumber, accessionNumber } = item
+		const accessionNoHyphen = accessionNumber.replace(/-/g, '')
+		const filePath = `${Number(cikNumber)}/${accessionNoHyphen}/${accessionNumber}.txt`
+		item.url = `https://www.sec.gov/Archives/edgar/data/${filePath}`
 	})
 
 	return result

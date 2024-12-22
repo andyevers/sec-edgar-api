@@ -12,6 +12,7 @@ export interface FilingItemXBRL {
 	title: string
 	link: string
 	guid: string
+	url: string
 	enclosureUrl: string
 	enclosureLength: number
 	enclosureType: string
