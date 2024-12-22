@@ -21,12 +21,7 @@ export default class ReportResolvable {
 
 	private depth = 0
 
-	constructor(args: {
-		report: Record<string, string | number | null | boolean>
-		calculationMap?: CalculationMap
-		/** Used for member facts */
-		pathSeparator?: string
-	}) {
+	constructor(args: { report: Record<string, string | number | null | boolean>; calculationMap?: CalculationMap }) {
 		const { report, calculationMap } = args
 		this.calculationMap = calculationMap ?? {}
 		this.report = report

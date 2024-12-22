@@ -1,4 +1,4 @@
-import type { InsiderTransaction, Issuer, Owner, XMLParams } from '../../../types'
+import type { InsiderTransaction, Issuer, Owner, TransactionCode, XMLParams } from '../../../types'
 import HtmlTableExtractor from '../../HtmlTableExtractor'
 import { TableHTMLData } from '../../HtmlTableExtractor/HtmlTableExtractor'
 
@@ -127,7 +127,7 @@ export function parseInsiderTransactions(params: XMLParams) {
 			isDirectOwnership: false,
 			securityTitle: '',
 			transactionDate: '',
-			transactionCode: '',
+			transactionCode: '' as unknown as TransactionCode,
 			transactionShares: 0,
 			sharesOwnedFollowingTransaction: 0,
 			lineNumber: 0,
@@ -159,7 +159,7 @@ export function parseInsiderTransactions(params: XMLParams) {
 					break
 				}
 				case 'transaction_type':
-					transaction.transactionCode = htmlStripped.trim()[0]
+					transaction.transactionCode = htmlStripped.trim()[0] as TransactionCode
 					break
 				case 'direct_or_indirect_ownership':
 					transaction.isDirectOwnership = htmlStripped.toLowerCase().includes('d')

@@ -12,6 +12,16 @@ export default class XMLParser {
 		'description',
 	])
 
+	private readonly textSelectStrategy: 'useFirst' | 'useLast' | 'concatenate'
+	private readonly tagsToIgnore = new Set(['script', '?xml'])
+	private readonly textConcatDivider: string
+
+	constructor(params?: { textSelectStrategy?: 'useFirst' | 'useLast' | 'concatenate'; textConcatDivider?: string }) {
+		const { textSelectStrategy = 'useFirst', textConcatDivider = '<>' } = params ?? {}
+		this.textSelectStrategy = textSelectStrategy
+		this.textConcatDivider = textConcatDivider
+	}
+
 	public mapAttributes(attributes: string[]) {
 		const attributesMap = new Map<string, string>()
 		attributes.forEach((attr) => {
@@ -22,7 +32,8 @@ export default class XMLParser {
 		return attributesMap
 	}
 
-	public parse(xml: string) {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	public parse(xml: string): any {
 		let currentObj: Record<string, unknown> = {}
 		const objPath: Record<string, unknown>[] = [currentObj]
 
@@ -33,7 +44,7 @@ export default class XMLParser {
 				const obj = currentObj
 
 				const isComment = tagName.startsWith('!--')
-				if (isComment || tagName === '?xml') return
+				if (isComment || this.tagsToIgnore.has(tagName.toLowerCase())) return
 
 				if (obj[tagName] === undefined) {
 					obj[tagName] = newObj
@@ -56,10 +67,24 @@ export default class XMLParser {
 				const textTrimmed = text.trim()
 				if (!textTrimmed) return
 				const obj = currentObj as Record<string, unknown>
-				obj['#text'] = textTrimmed
+
+				switch (this.textSelectStrategy) {
+					case 'useFirst':
+						if (obj['#text']) return
+						obj['#text'] = textTrimmed
+						break
+					case 'useLast':
+						obj['#text'] = textTrimmed
+						break
+					case 'concatenate':
+						obj['#text'] = obj['#text']
+							? `${obj['#text']} ${this.textConcatDivider} ${textTrimmed}`
+							: textTrimmed
+						break
+				}
 			},
-			onCloseTag: () => {
-				if (objPath.length === 1) return
+			onCloseTag: (tagName) => {
+				if (objPath.length === 1 || this.tagsToIgnore.has(tagName.toLowerCase())) return
 				objPath.pop()
 				currentObj = objPath[objPath.length - 1]
 			},

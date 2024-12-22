@@ -1,56 +1,40 @@
 import type { CompanySearchResult, XMLParams } from '../../../types'
-import HtmlTableExtractor from '../../HtmlTableExtractor'
+import XMLParser from '../XMLParser'
 
 export function parseCompanies(params: XMLParams) {
 	const { xml } = params
 
-	const parser = new HtmlTableExtractor()
-	const tables = parser.extractTables(xml, {
-		stripHtml: true,
-		tagsToExclude: ['sup'],
-		stripParenthesis: true,
-		removeEmptyColumns: false,
-		getHeaderRowIndex: (data) => {
-			return data.rows.findIndex((row) => {
-				const isNotEmptyRow = row.some(
-					(cell) => cell.html.replace(/<.*?>/g, '').replace(/&.*?;/g, '').replace(/\s/g, '').length > 0,
-				)
-				return isNotEmptyRow
-			})
-		},
-	})
+	const parser = new XMLParser({ textSelectStrategy: 'concatenate', textConcatDivider: '<>' })
+	const result = parser.parse(xml)
 
-	const header = ['cik', 'company_name', 'state_country']
-	const table = tables.find((t) => t.rows.some((r) => r.some((c) => c.html.includes('CIK'))))
+	const body = result.html?.body ?? {}
+	const bodyDivs = Array.isArray(body.div) ? body.div : [body.div].filter(Boolean)
+
+	const contentDiv =
+		bodyDivs.find((d: Record<string, unknown>) => d && typeof d === 'object' && d['@_id'] === 'contentDiv') ??
+		({} as Record<string, unknown>[])
+
+	const tableDivs = Array.isArray(contentDiv.div) ? contentDiv.div : [contentDiv.div].filter(Boolean)
+	const tableDiv =
+		tableDivs.find((d: Record<string, unknown>) => d && typeof d === 'object' && d['@_id'] === 'seriesDiv') ??
+		({} as Record<string, unknown>[])
+
+	let rows = tableDiv.table?.tr ?? tableDiv.table?.tbody?.tr ?? []
+	rows = (Array.isArray(rows) ? rows : [rows])
+		.filter((r) => r?.td)
+		.map((r) => (Array.isArray(r.td) ? r.td : [r.td]).filter(Boolean))
 
 	const items: CompanySearchResult[] = []
-	for (const row of table?.rows ?? []) {
-		if (row[0]?.isHeaderRowCell) continue
+	for (const row of rows) {
+		const cik = Number(row[0]?.a?.['#text']) || 0
+		if (!cik) continue
+		const row1Parts = (row[1]?.['#text'] || '').split('<>') ?? []
+		const sic = Number(row[1]?.a?.['#text']) || null
+		const companyName = row1Parts[0].trim()
+		const sicDescription = sic ? row1Parts.pop()?.replace('-', '').trim() || null : null
+		const stateOrCountry = row[2]?.a?.['#text'] || null
 
-		const item = {
-			cik: 0,
-			companyName: '',
-			stateOrCountry: '',
-		}
-
-		for (const cell of row) {
-			const colName = header[cell.colIndex]
-			switch (colName) {
-				case 'cik':
-					item.cik = Number(cell.valueParsed) || 0
-					break
-				case 'company_name':
-					item.companyName = String(
-						cell.html.split('>')[1]?.split('<')[0]?.split('/')[0] || cell.valueParsed,
-					).trim()
-					break
-				case 'state_country':
-					item.stateOrCountry = String(cell.valueParsed || '')
-					break
-			}
-		}
-
-		items.push(item)
+		items.push({ cik, sic, sicDescription, companyName, stateOrCountry })
 	}
 
 	return { items }
