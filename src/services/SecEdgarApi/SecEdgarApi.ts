@@ -331,10 +331,9 @@ export default class SecEdgarApi {
 		const { calculationMap } = params
 		const reports = await this.getReportsRaw({ ...params, includeNamePrefix: true })
 
-		return this.reportParser.translateReports({
-			reports,
-			calculationMap,
-		}) as (typeof params.calculationMap extends undefined ? ReportTranslated : ReportRaw & R)[]
+		return reports.map((report) =>
+			this.reportParser.translateReport({ report, calculationMap }),
+		) as (typeof params.calculationMap extends undefined ? ReportTranslated : ReportRaw & R)[]
 	}
 
 	/**

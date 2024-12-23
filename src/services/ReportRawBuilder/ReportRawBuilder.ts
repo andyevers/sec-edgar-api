@@ -27,6 +27,10 @@ export interface BuildReportsParams {
 	splits?: SplitData[]
 	resolvePeriodValues?: boolean
 	adjustForSplits?: boolean
+	/**
+	 * For member facts (facts with segments), the separator between the fact name and the segments.
+	 */
+	pathSeparatorForMemberFacts?: string
 }
 
 /**
@@ -39,8 +43,29 @@ export default class ReportRawBuilder {
 		return this.factRecordBuilder.createFacts(companyFacts, includeNamePrefix)
 	}
 
+	private getFactKey(fact: FactItem, pathSeparator: string) {
+		const suffix = fact.segments
+			?.map(({ dimension, value }) => `${dimension}${pathSeparator}${value}`)
+			.join(pathSeparator)
+
+		return suffix ? `${fact.name}${pathSeparator}${suffix}` : fact.name
+	}
+
 	public buildReports(params: BuildReportsParams) {
-		const { facts, filings, splits: splitsProp, resolvePeriodValues = true, adjustForSplits = true } = params
+		const {
+			facts: factsProp,
+			filings,
+			splits: splitsProp,
+			resolvePeriodValues = true,
+			adjustForSplits = true,
+			pathSeparatorForMemberFacts = '>',
+		} = params
+
+		// Rename member facts to prevent overwriting parent facts.
+		const facts = factsProp.map((fact) => {
+			const factKey = this.getFactKey(fact, pathSeparatorForMemberFacts)
+			return { ...fact, name: factKey }
+		})
 
 		if (facts.length === 0) {
 			return []

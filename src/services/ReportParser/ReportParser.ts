@@ -76,37 +76,38 @@ export default class ReportParser {
 	/**
 	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
 	 */
-	public translateReports<T = ReportTranslated>(params: {
-		reports: ReportRaw[]
+	public translateReport<T = ReportTranslated>(params: {
+		report: ReportRaw
 		calculationMap?: CalculationMap<T>
-	}): (ReportRaw & T)[] {
-		const { reports, calculationMap } = params
+	}): ReportRaw & T {
+		const { report, calculationMap } = params
 
 		const calcMap = calculationMap ?? this.defaultCalculationMap
-		return reports.map((report) => {
-			const reportNew: ReportRaw = {
-				cik: report.cik,
-				dateFiled: report.dateFiled,
-				dateReport: report.dateReport,
-				fiscalPeriod: report.fiscalPeriod,
-				url: report.url,
-				fiscalYear: report.fiscalYear,
-				splitDate: report.splitDate,
-				splitRatio: report.splitRatio,
-			}
+		const reportNew: ReportRaw = {
+			cik: report.cik,
+			dateFiled: report.dateFiled,
+			dateReport: report.dateReport,
+			fiscalPeriod: report.fiscalPeriod,
+			url: report.url,
+			fiscalYear: report.fiscalYear,
+			splitDate: report.splitDate,
+			splitRatio: report.splitRatio,
+		}
 
-			const reportResolvable = new ReportResolvable({
-				report,
-				calculationMap: calcMap,
-			})
+		const reportResolvable = new ReportResolvable({
+			report,
+			calculationMap: calcMap,
+		})
 
-			for (const key in calcMap) {
-				const value = reportResolvable.get(key) ?? null
+		for (const key in calcMap) {
+			const value = reportResolvable.get(key) ?? null
+			// use first truthy value
+			if (!reportNew[key]) {
 				reportNew[key] = value as string | number | null
 			}
+		}
 
-			return reportNew as T & ReportRaw
-		})
+		return reportNew as T & ReportRaw
 	}
 
 	/**
@@ -134,7 +135,7 @@ export default class ReportParser {
 	}
 
 	/**
-	 * @deprecated use translateReports
+	 * @deprecated use translateReport
 	 *
 	 * Translate ReportRaw to ReportTranslated by default, but can be used to translate to any object using both the callback and keyTranslator
 	 *
