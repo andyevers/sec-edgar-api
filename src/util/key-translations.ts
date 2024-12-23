@@ -1,6 +1,8 @@
 import type { ReportTranslated } from '../types/report-translated.type'
 
 /**
+ * @deprecated use calculationMap for ReportResolvable
+ *
  * Checks if any of the array keys exist in the object to assign to the translated key
  * These were checked against Yahoo Finance values, adding the ones that most often matched the yahoo values
  */

@@ -76,14 +76,14 @@ export default class ReportParser {
 	/**
 	 * Same as parseReports but accepts ReportRaw[] instead of CompanyFactListData
 	 */
-	public parseReportsFromRaw<T = ReportTranslated>(params: {
-		reportsRaw: ReportRaw[]
+	public translateReports<T = ReportTranslated>(params: {
+		reports: ReportRaw[]
 		calculationMap?: CalculationMap<T>
 	}): (ReportRaw & T)[] {
-		const { reportsRaw, calculationMap } = params
+		const { reports, calculationMap } = params
 
 		const calcMap = calculationMap ?? this.defaultCalculationMap
-		return reportsRaw.map((report) => {
+		return reports.map((report) => {
 			const reportNew: ReportRaw = {
 				cik: report.cik,
 				dateFiled: report.dateFiled,
@@ -134,6 +134,8 @@ export default class ReportParser {
 	}
 
 	/**
+	 * @deprecated use translateReports
+	 *
 	 * Translate ReportRaw to ReportTranslated by default, but can be used to translate to any object using both the callback and keyTranslator
 	 *
 	 * @param reportsRaw this is the output of parseReportsRaw

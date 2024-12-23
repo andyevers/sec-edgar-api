@@ -30,14 +30,12 @@ export default class FactFiscalCalculator {
 		filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
 	}) {
 		const { facts = [], filings = [] } = params ?? {}
-		if (filings.length > 0) {
-			this.useFilingsForDates({ filings })
-		}
 
+		this.useFilingsForDates({ filings })
 		facts.forEach((fact) => this.add(fact))
 	}
 
-	public useFilingsForDates(params: {
+	private useFilingsForDates(params: {
 		filings: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
 	}) {
 		const { filings } = params

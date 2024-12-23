@@ -1,5 +1,14 @@
-import type { CompanyFactListData, FactGroup, FactItem, FiscalPeriod, ReportRaw, SplitData } from '../../types'
-import FactFiscalCalculator, { SetReportDatesParams } from './FactFiscalCalculator'
+import type {
+	CompanyFactListData,
+	FactGroup,
+	FactItem,
+	FilingListItemTranslated,
+	FiscalPeriod,
+	ReportRaw,
+	SplitData,
+} from '../../types'
+import { FORMS_EARNINGS } from '../../util/constants'
+import FactFiscalCalculator from './FactFiscalCalculator'
 import FactGrouper from './FactGrouper'
 import FactRecordBuilder from './FactRecordBuilder'
 import FactSplitAdjuster from './FactSplitAdjuster'
@@ -10,7 +19,8 @@ export interface BuildReportsParams {
 	 * for more accurate dates, add this. Otherwise, dates will be inferred
 	 * using the fact periods. The filing and report dates can be found in the SubmissionList (segEdgarApi.getSubmissions)
 	 */
-	reportDates?: SetReportDatesParams[]
+	// reportDates?: SetReportDatesParams[]
+	filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
 	/**
 	 * Splits will be extracted from facts if not provided.
 	 */
@@ -29,33 +39,24 @@ export default class ReportRawBuilder {
 		return this.factRecordBuilder.createFacts(companyFacts, includeNamePrefix)
 	}
 
-	private createFiscalCalculator(params: { facts: FactItem[] }) {
-		const { facts } = params
-		const fiscalCalculator = new FactFiscalCalculator()
-
-		for (const fact of facts) {
-			fiscalCalculator.add(fact)
-		}
-
-		return fiscalCalculator
-	}
-
 	public buildReports(params: BuildReportsParams) {
-		const { facts, reportDates, splits: splitsProp, resolvePeriodValues = true, adjustForSplits = true } = params
+		const { facts, filings, splits: splitsProp, resolvePeriodValues = true, adjustForSplits = true } = params
 
 		if (facts.length === 0) {
 			return []
 		}
 
-		const accessionByYearQuarter = new Map<string, string>()
-		reportDates?.forEach((params) => {
-			const { year, quarter, accn } = params
-			if (accn) accessionByYearQuarter.set(`${year}_${quarter}`, accn)
+		const reportsCik = Number(facts[0].cik)
+		const fiscalCalculator = new FactFiscalCalculator({
+			filings: filings?.filter((f) => FORMS_EARNINGS.includes(f.form)),
+			facts,
 		})
 
-		const reportsCik = Number(facts[0].cik)
-		const fiscalCalculator = reportDates ? new FactFiscalCalculator() : this.createFiscalCalculator({ facts })
-		reportDates?.forEach((params) => fiscalCalculator.setReportDates(params))
+		const accessionByYearQuarter = new Map<string, string>()
+		filings?.forEach((f) => {
+			const { year, quarter } = fiscalCalculator.getFiscalYearQuarter({ dateStr: f.reportDate })
+			accessionByYearQuarter.set(f.accessionNumber, `${year}_${quarter}`)
+		})
 
 		const factGrouper = new FactGrouper()
 		const factSplitAdjuster = new FactSplitAdjuster()
