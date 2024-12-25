@@ -16,6 +16,7 @@ interface ReportWithPeriod extends ReportRaw {
 	period: number
 	startDate: string
 	endDate: string
+	isCurrentPeriod: boolean
 }
 
 export interface DocumentXbrlResult extends XbrlParseResult {
@@ -71,7 +72,7 @@ function buildReportsFromFacts(params: {
 		url: filing?.url ?? '',
 	}
 
-	const reportByDateRange: Record<string, ReportRaw & { startDate: string; endDate: string; period: number }> = {}
+	const reportByDateRange: Record<string, ReportWithPeriod> = {}
 	const factByName = new Map<string, FactItemExtended>()
 	const roundPlacesByName = new Map<string, number>()
 	const scaleByName = new Map<string, number>()
@@ -99,6 +100,11 @@ function buildReportsFromFacts(params: {
 			fiscalsByDateKey.set(dateKey, { fiscalYear: year, fiscalPeriod })
 		}
 
+		const isSplitFact = fact === splitFact
+		const isFocusFact =
+			isFocusFactByDateKey.get(dateKey) ??
+			(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact)
+
 		reportByDateRange[dateKey] ??= {
 			cik: reportFocus.cik,
 			url: '',
@@ -111,12 +117,8 @@ function buildReportsFromFacts(params: {
 			endDate: fact.end,
 			fiscalYear: fiscalsByDateKey.get(dateKey)?.fiscalYear as number,
 			period: FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end }),
+			isCurrentPeriod: isFocusFact,
 		}
-
-		const isSplitFact = fact === splitFact
-		const isFocusFact =
-			isFocusFactByDateKey.get(dateKey) ??
-			(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact)
 
 		if (isFocusFact) {
 			fact.isCurrentPeriod = true
