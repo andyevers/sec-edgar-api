@@ -1,6 +1,6 @@
 {
     "name": "sec-edgar-api",
-    "version": "0.5.4",
+    "version": "0.5.5",
     "description": "Fetch and parse SEC earnings reports and other filings. Useful for financial analysis.",
     "main": "build/index.js",
     "author": "Andrew Evers (https://github.com/andyevers)",
