@@ -1,4 +1,5 @@
 import type { FactItem, FilingListItemTranslated } from '../../types'
+import { FORMS_EARNINGS, FORMS_EARNINGS_ANNUAL } from '../../util/constants'
 
 export interface SetReportDatesParams {
 	year: number
@@ -25,12 +26,15 @@ export default class FactFiscalCalculator {
 
 	private didResolve = false
 
+	private readonly fiscalYearEnd: { month: number; day: number } | null = null
+
 	constructor(params?: {
 		facts?: Pick<FactItem, 'end' | 'filed'>[]
 		filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
+		fiscalYearEnd?: { month: number; day: number } | null
 	}) {
-		const { facts = [], filings = [] } = params ?? {}
-
+		const { facts = [], filings = [], fiscalYearEnd } = params ?? {}
+		this.fiscalYearEnd = fiscalYearEnd ?? null
 		this.useFilingsForDates({ filings })
 		facts.forEach((fact) => this.add(fact))
 	}
@@ -43,13 +47,13 @@ export default class FactFiscalCalculator {
 		const endDateByYear = new Map<number, Date>()
 
 		filings.forEach(({ reportDate, form }) => {
-			if (form === '10-K' || form === '20-F') {
+			if (FORMS_EARNINGS_ANNUAL.includes(form)) {
 				endDateByYear.set(Number(reportDate.substring(0, 4)), new Date(reportDate))
 			}
 		})
 
 		filings.forEach((filing) => {
-			if (filing.form === '10-K' || filing.form === '10-Q' || filing.form === '20-F' || filing.form === '40-F') {
+			if (FORMS_EARNINGS.includes(filing.form)) {
 				const { quarter, year } = this.getFiscalYearQuarter({
 					dateStr: filing.reportDate,
 					endDateByYear,
@@ -248,22 +252,38 @@ export default class FactFiscalCalculator {
 		return this.datesByFiscals.get(`${params.year}_${params.quarter}`) ?? null
 	}
 
-	public getFiscalYearQuarter(params: { dateStr: string; endDateByYear?: Map<number, Date> }) {
-		const { dateStr, endDateByYear = this.endDateByYear } = params
+	public getFiscalYearQuarter(params: {
+		dateStr: string
+		endDateByYear?: Map<number, Date>
+		fiscalYearEnd?: { month: number; day: number } | null
+	}) {
+		const { dateStr, endDateByYear = this.endDateByYear, fiscalYearEnd = this.fiscalYearEnd } = params
 
 		if (this.fiscalsByEndDate.has(dateStr)) {
 			return this.fiscalsByEndDate.get(dateStr)!
 		}
 
-		const fiscals = FactFiscalCalculator.getFiscalYearQuarter({ dateStr, endDateByYear })
+		const fiscals = FactFiscalCalculator.getFiscalYearQuarter({ dateStr, endDateByYear, fiscalYearEnd })
 		this.fiscalsByEndDate.set(dateStr, fiscals)
 		return fiscals
 	}
 
-	public static getFiscalYearQuarter(params: { dateStr: string; endDateByYear: Map<number, Date> }) {
-		const { dateStr, endDateByYear } = params
+	public static getFiscalYearQuarter(params: {
+		dateStr: string
+		endDateByYear?: Map<number, Date>
+		fiscalYearEnd?: { month: number; day: number } | null
+	}) {
+		const { dateStr, endDateByYear: endDateByYearProp, fiscalYearEnd } = params
+		const endDateByYear = endDateByYearProp ?? new Map<number, Date>()
 
-		if (endDateByYear.size === 0) {
+		if (fiscalYearEnd) {
+			const { month, day } = fiscalYearEnd
+			const year = new Date().getFullYear()
+			const yearEndDate = new Date(`${year}-${month}-${day}`)
+			endDateByYear.set(year, endDateByYear.get(year) ?? yearEndDate)
+		}
+
+		if (!endDateByYear?.size) {
 			throw new Error('No annual report dates provided')
 		}
 
