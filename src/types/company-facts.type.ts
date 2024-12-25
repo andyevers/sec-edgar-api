@@ -83,6 +83,7 @@ export interface FactItem {
 
 export interface FactItemExtended extends FactItem {
 	isUsedInReport?: boolean
+	isCurrentPeriod?: boolean
 	decimals?: number
 	scale?: number
 }

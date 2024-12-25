@@ -26,7 +26,7 @@ describe('ReportParser', () => {
 	})
 
 	test('parseReportsFromRaw', () => {
-		const reports = reportParser.parseReportsFromRaw({ reportsRaw })
+		const reports = reportsRaw.map((report) => reportParser.translateReport({ report }))
 
 		const _report = reports.find((r) => r.fiscalPeriod === 'Q1' && r.fiscalYear === 2022)
 		const _reportRaw = reportsRaw.find((r) => r.fiscalPeriod === 'Q1' && r.fiscalYear === 2022)
@@ -92,7 +92,7 @@ describe('ReportParser', () => {
 	})
 
 	test('resolvers', () => {
-		const reports = reportParser.parseReportsFromRaw({ reportsRaw })
+		const reports = reportsRaw.map((report) => reportParser.translateReport({ report }))
 		const report = reports.find((r) => r.fiscalPeriod === 'Q2' && r.fiscalYear === 2022) as ReportTranslated
 
 		// actual value for Q2 2022 is 2,737,000,000.

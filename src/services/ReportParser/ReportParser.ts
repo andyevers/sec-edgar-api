@@ -117,9 +117,9 @@ export default class ReportParser {
 	 */
 	public parseReportsRaw(
 		companyFactListData: CompanyFactListData,
-		options: Omit<BuildReportsParams, 'facts'> & { includeNamePrefix?: boolean },
+		options?: Omit<BuildReportsParams, 'facts'> & { includeNamePrefix?: boolean },
 	): ReportRaw[] {
-		const { includeNamePrefix } = options
+		const { includeNamePrefix } = options ?? {}
 		const { facts } = this.reportBuilder.createFacts(companyFactListData, includeNamePrefix)
 		return this.reportBuilder.buildReports({
 			facts,

@@ -31,6 +31,7 @@ export interface BuildReportsParams {
 	 * For member facts (facts with segments), the separator between the fact name and the segments.
 	 */
 	pathSeparatorForMemberFacts?: string
+	fiscalYearEnd?: { month: number; day: number } | null
 }
 
 /**
@@ -59,6 +60,7 @@ export default class ReportRawBuilder {
 			resolvePeriodValues = true,
 			adjustForSplits = true,
 			pathSeparatorForMemberFacts = '>',
+			fiscalYearEnd,
 		} = params
 
 		// Rename member facts to prevent overwriting parent facts.
@@ -75,6 +77,7 @@ export default class ReportRawBuilder {
 		const fiscalCalculator = new FactFiscalCalculator({
 			filings: filings?.filter((f) => FORMS_EARNINGS.includes(f.form)),
 			facts,
+			fiscalYearEnd,
 		})
 
 		const accessionByYearQuarter = new Map<string, string>()

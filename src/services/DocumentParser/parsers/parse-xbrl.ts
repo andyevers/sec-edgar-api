@@ -7,17 +7,28 @@ import type {
 	XbrlContext,
 } from '../../../types'
 import { KEY_SPLIT } from '../../../util/constants'
+import FactFiscalCalculator from '../../ReportRawBuilder/FactFiscalCalculator'
+import FactPeriodResolver from '../../ReportRawBuilder/FactPeriodResolver'
 import { GetDocumentXbrlParams } from '../../SecEdgarApi'
 import XBRLParser, { XbrlParseResult } from '../XBRLParser/XBRLParser'
+
+interface ReportWithPeriod extends ReportRaw {
+	period: number
+	startDate: string
+	endDate: string
+}
 
 export interface DocumentXbrlResult extends XbrlParseResult {
 	report: ReportRaw | null
 	facts: FactItemExtended[]
 	xml: string
+	/** Facts grouped into reports by their start and end dates */
+	periodReports: ReportWithPeriod[]
 }
 
 function isWithinDays(params: { dateA: string | number | Date; dateB: string | number | Date; days: number }) {
 	const { dateA, dateB, days } = params
+	if (dateA === dateB) return true
 	const timeDiff = Math.abs(new Date(dateA).getTime() - new Date(dateB).getTime())
 	const daysDiff = timeDiff / (1000 * 3600 * 24)
 	return daysDiff < days
@@ -60,23 +71,56 @@ function buildReportsFromFacts(params: {
 		url: filing?.url ?? '',
 	}
 
-	const reportByDateRange: Record<string, { startDate: string; endDate: string; [k: string]: string | number }> = {}
+	const reportByDateRange: Record<string, ReportRaw & { startDate: string; endDate: string; period: number }> = {}
 	const factByName = new Map<string, FactItemExtended>()
 	const roundPlacesByName = new Map<string, number>()
 	const scaleByName = new Map<string, number>()
 	const isFocusFactByDateKey = new Map<string, boolean>()
 
+	const dateYearEnd = new Date(reportFocus.dateReport)
+	const offsetByFiscalPeriod = { Q1: 9, Q2: 6, Q3: 3, Q4: 0, FY: 0 }
+	dateYearEnd.setMonth(dateYearEnd.getMonth() + (offsetByFiscalPeriod[reportFocus.fiscalPeriod] ?? 0))
+
+	const fiscalCalculator = new FactFiscalCalculator({
+		filings: filing ? [filing] : undefined,
+		facts: facts,
+		fiscalYearEnd: { day: dateYearEnd.getDate(), month: dateYearEnd.getMonth() + 1 },
+	})
+
+	const fiscalsByDateKey = new Map<string, { fiscalYear: number; fiscalPeriod: FiscalPeriod }>()
+
 	for (const fact of facts) {
 		const dateKey = fact.start ? `${fact.start}_${fact.end}` : fact.end
+
+		if (!fiscalsByDateKey.has(dateKey)) {
+			const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: fact.end })
+			const period = FactPeriodResolver.getPeriod({ end: fact.end, start: fact.start })
+			const fiscalPeriod = (period === 12 && quarter === 4 ? 'FY' : `Q${quarter}`) as FiscalPeriod
+			fiscalsByDateKey.set(dateKey, { fiscalYear: year, fiscalPeriod })
+		}
+
 		reportByDateRange[dateKey] ??= {
+			cik: reportFocus.cik,
+			url: '',
+			splitDate: splitFact?.end ?? null,
+			splitRatio: splitFact?.value ? Number(splitFact.value) : null,
+			dateFiled: reportFocus.dateFiled,
+			dateReport: fact.end,
+			fiscalPeriod: fiscalsByDateKey.get(dateKey)?.fiscalPeriod as FiscalPeriod,
 			startDate: fact.start ?? '',
 			endDate: fact.end,
+			fiscalYear: fiscalsByDateKey.get(dateKey)?.fiscalYear as number,
+			period: FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end }),
 		}
 
 		const isSplitFact = fact === splitFact
 		const isFocusFact =
 			isFocusFactByDateKey.get(dateKey) ??
 			(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact)
+
+		if (isFocusFact) {
+			fact.isCurrentPeriod = true
+		}
 
 		if (!isSplitFact) {
 			isFocusFactByDateKey.set(dateKey, isFocusFact)
@@ -180,7 +224,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 	}
 
 	const factsForBuilder = includeReport ? facts : []
-	const { factsFiltered, reportFocus } = buildReportsFromFacts({
+	const { factsFiltered, reportFocus, reportByDateRange } = buildReportsFromFacts({
 		facts: factsForBuilder,
 		pathSeparator: '>',
 		fiscalPeriod: factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalPeriodFocus')?.value as FiscalPeriod,
@@ -211,5 +255,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		facts: factsFiltered,
 		report: factsFiltered.length > 0 ? reportFocus : null,
 		xml,
+		periodReports: Object.values(reportByDateRange),
 	}
 }

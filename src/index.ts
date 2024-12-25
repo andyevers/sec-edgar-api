@@ -2,6 +2,7 @@ import ReportParser from './services/ReportParser'
 import SecEdgarApi from './services/SecEdgarApi'
 import ReportResolvable from './services/ReportParser/ReportResolvable'
 import { utilMap } from './util/util-map'
+import FactFiscalCalculator from './services/ReportRawBuilder/FactFiscalCalculator'
 
 /**
  * Takes company facts data from the SEC and translates them to
@@ -17,5 +18,5 @@ const reportParser = new ReportParser()
  */
 const secEdgarApi = new SecEdgarApi()
 
-export { reportParser, secEdgarApi, ReportResolvable, utilMap }
+export { reportParser, secEdgarApi, ReportResolvable, utilMap, FactFiscalCalculator }
 export type * from './types'
