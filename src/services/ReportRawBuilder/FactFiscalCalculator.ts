@@ -21,6 +21,7 @@ export default class FactFiscalCalculator {
 	private readonly datesByFiscals = new Map<string, { filed: string; end: string }>()
 
 	/// these get cleared after resolve
+	private readonly startDateCountMap = new Map<string, number>()
 	private readonly endDateCountMap = new Map<string, number>()
 	private readonly filedDateCountByEndDate = new Map<string, Map<string, number>>()
 
@@ -29,7 +30,7 @@ export default class FactFiscalCalculator {
 	private readonly fiscalYearEnd: { month: number; day: number } | null = null
 
 	constructor(params?: {
-		facts?: Pick<FactItem, 'end' | 'filed'>[]
+		facts?: Pick<FactItem, 'end' | 'filed' | 'start'>[]
 		filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
 		fiscalYearEnd?: { month: number; day: number } | null
 	}) {
@@ -71,8 +72,8 @@ export default class FactFiscalCalculator {
 		})
 	}
 
-	public add(fact: { end: string; filed: string }) {
-		const { end, filed } = fact
+	public add(fact: { end: string; filed: string; start?: string }) {
+		const { end, filed, start } = fact
 
 		if (this.didResolve) {
 			throw new Error('Cannot add fact after resolving')
@@ -83,6 +84,10 @@ export default class FactFiscalCalculator {
 		}
 
 		this.endDateCountMap.set(end, (this.endDateCountMap.get(end) ?? 0) + 1)
+
+		if (start) {
+			this.startDateCountMap.set(start, (this.startDateCountMap.get(start) ?? 0) + 1)
+		}
 
 		// don't record filed dates for restated facts
 		if (this.getDaysBefore(filed, end) < 60) {
@@ -241,6 +246,7 @@ export default class FactFiscalCalculator {
 			}
 		})
 
+		this.ensureEndDateByYear()
 		this.endDateCountMap.clear()
 		this.filedDateCountByEndDate.clear()
 		this.didResolve = true
@@ -252,6 +258,24 @@ export default class FactFiscalCalculator {
 		return this.datesByFiscals.get(`${params.year}_${params.quarter}`) ?? null
 	}
 
+	/**
+	 * Assumes year end from start dates if not provided
+	 */
+	private ensureEndDateByYear() {
+		if (this.endDateByYear.size > 0 || this.fiscalYearEnd || this.startDateCountMap.size === 0) return
+		let maxStartDateCount = 0
+		let maxStartDate = ''
+		this.startDateCountMap.forEach((count, date) => {
+			if (count > maxStartDateCount) {
+				maxStartDateCount = count
+				maxStartDate = date
+			}
+		})
+
+		this.endDateByYear.set(Number(maxStartDate.split('-', 1)[0]) - 1, new Date(maxStartDate))
+		this.startDateCountMap.clear()
+	}
+
 	public getFiscalYearQuarter(params: {
 		dateStr: string
 		endDateByYear?: Map<number, Date>
@@ -259,6 +283,7 @@ export default class FactFiscalCalculator {
 	}) {
 		const { dateStr, endDateByYear = this.endDateByYear, fiscalYearEnd = this.fiscalYearEnd } = params
 
+		this.ensureEndDateByYear()
 		if (this.fiscalsByEndDate.has(dateStr)) {
 			return this.fiscalsByEndDate.get(dateStr)!
 		}
