@@ -31,7 +31,7 @@ function extractXbrlObject(value: any) {
 		return null
 	}
 	for (let i = 0; i < 10; i++) {
-		const xbrlChild = xbrl.XBRL ?? xbrl.xbrl
+		const xbrlChild = xbrl.XBRL ?? xbrl.xbrl ?? xbrl['xbrli:xbrl'] ?? xbrl['xbrli:XBRL']
 		if (xbrlChild) xbrl = xbrlChild
 		else break
 	}
