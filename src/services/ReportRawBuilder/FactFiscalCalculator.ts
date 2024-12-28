@@ -301,6 +301,10 @@ export default class FactFiscalCalculator {
 		const { dateStr, endDateByYear: endDateByYearProp, fiscalYearEnd } = params
 		const endDateByYear = endDateByYearProp ?? new Map<number, Date>()
 
+		if (!dateStr) {
+			throw new Error('No date provided, cannot determine fiscal year and quarter')
+		}
+
 		if (fiscalYearEnd) {
 			const { month, day } = fiscalYearEnd
 			const year = new Date().getFullYear()

@@ -240,7 +240,17 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 			},
 		})
 
-		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: response.header.reportDate })
+		const reportDate =
+			response.header.reportDate ??
+			response.instance?.xbrl.factElements.find((f) => f.name === 'dei:DocumentPeriodEndDate')?.text
+
+		if (!reportDate) {
+			throw new Error(
+				`Report date not found. Unable to determine fiscal year and period. accn: ${accessionNumber}`,
+			)
+		}
+
+		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: reportDate ?? '' })
 		fiscalYear = year
 		fiscalPeriod = (quarter === 4 ? 'FY' : `Q${quarter}`) as FiscalPeriod
 	}
