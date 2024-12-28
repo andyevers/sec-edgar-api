@@ -21,6 +21,8 @@ interface ReportWithPeriod extends ReportRaw {
 
 export interface DocumentXbrlResult extends XbrlParseResult {
 	report: ReportRaw | null
+	fiscalYear: number
+	fiscalPeriod: FiscalPeriod
 	facts: FactItemExtended[]
 	xml: string
 	/** Facts grouped into reports by their start and end dates */
@@ -132,9 +134,9 @@ function buildReportsFromFacts(params: {
 		const scale = Number(el.scale ?? 0) || 0
 		const decimals = Number(el.decimals ?? 0) || 0
 
-		const suffix = fact?.segments
-			?.map(({ dimension, value }) => `${dimension}${pathSeparator}${value}`)
-			.join(pathSeparator)
+		const suffix = fact.name.includes(pathSeparator)
+			? null
+			: fact?.segments?.map(({ dimension, value }) => `${dimension}${pathSeparator}${value}`).join(pathSeparator)
 
 		const nameKey = suffix ? `${fact.name}${pathSeparator}${suffix}` : fact.name
 
@@ -225,6 +227,24 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		facts.push(factParsed)
 	}
 
+	const fiscalPeriodFact = facts.find((f) => f.name === 'dei:DocumentFiscalPeriodFocus')
+	const fiscalYearFact = facts.find((f) => f.name === 'dei:DocumentFiscalYearFocus')
+
+	let fiscalYear = fiscalYearFact ? Number(fiscalYearFact.value) : 0
+	let fiscalPeriod = fiscalPeriodFact ? (fiscalPeriodFact.value as FiscalPeriod) : 'FY'
+	if (!fiscalPeriodFact || !fiscalYearFact) {
+		const fiscalCalculator = new FactFiscalCalculator({
+			fiscalYearEnd: {
+				day: Number(response.header.fiscalYearEnd.substring(2)),
+				month: Number(response.header.fiscalYearEnd.substring(0, 2)),
+			},
+		})
+
+		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: response.header.reportDate })
+		fiscalYear = year
+		fiscalPeriod = (quarter === 4 ? 'FY' : `Q${quarter}`) as FiscalPeriod
+	}
+
 	const factsForBuilder = includeReport ? facts : []
 	const { factsFiltered, reportFocus, reportByDateRange } = buildReportsFromFacts({
 		facts: factsForBuilder,
@@ -254,6 +274,8 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 
 	return {
 		...response,
+		fiscalYear,
+		fiscalPeriod,
 		facts: factsFiltered,
 		report: factsFiltered.length > 0 ? reportFocus : null,
 		xml,
