@@ -540,6 +540,8 @@ export default class SecEdgarApi {
 	/**
 	 * Gets list of filings for a day up to 5 days ago.
 	 *
+	 * NOTE: This has not been updated since 2014 and has had issues with not returning data.
+	 *
 	 * @see https://www.sec.gov/edgar/searchedgar/currentevents
 	 */
 	public async getCurrentFilingsDaily(params?: {
@@ -570,6 +572,12 @@ export default class SecEdgarApi {
 		return this.documentParser.parseCurrentFilingsDaily({ xml })
 	}
 
+	/**
+	 * Lists all types of current filings including non XBRL. If fetching earnings reports,
+	 * use getCurrentFilingsXbrl instead.
+	 *
+	 * @see https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent
+	 */
 	public async getCurrentFilings(params?: GetCurrentFilingsParams) {
 		const { page = 1, itemsPerPage = 100, formType, searchType, symbol } = params ?? {}
 
@@ -590,6 +598,8 @@ export default class SecEdgarApi {
 	}
 
 	/**
+	 * Fetches XBRL filings using the RSS feeds provided by the SEC.
+	 *
 	 * @see https://www.sec.gov/structureddata/rss-feeds-submitted-filings
 	 */
 	public async getCurrentFilingsXbrl(params?: { taxonomy?: 'usGaap' | 'mutualFund' | 'inlineXbrl' | 'allXbrl' }) {
