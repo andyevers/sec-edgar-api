@@ -75,7 +75,7 @@ export default class ReportRawBuilder {
 
 		const reportsCik = Number(facts[0].cik)
 		const fiscalCalculator = new FactFiscalCalculator({
-			filings: filings?.filter((f) => FORMS_EARNINGS.includes(f.form)),
+			filings: filings?.filter((f) => FORMS_EARNINGS.includes(f.form) && Boolean(f.reportDate)),
 			facts,
 			fiscalYearEnd,
 		})

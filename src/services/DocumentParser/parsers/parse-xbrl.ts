@@ -282,6 +282,29 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		},
 	})
 
+	// Some concepts have members, but do not have a sum. add the sum to the report.
+	const periodReports = Object.values(reportByDateRange)
+	for (const report of periodReports) {
+		for (const key in report) {
+			if (!key.includes('>')) continue
+			const parts = key.split('>')
+			const concept = parts.shift()
+			const center = parts.slice(0, -1).join('>')
+
+			if (!concept || report[concept] !== undefined) continue
+
+			let sum = 0
+			for (const k in report) {
+				const prefix = `${concept}>${center}>`
+				if (k.startsWith(prefix) && !k.split(prefix).pop()?.includes('>')) {
+					sum += Number(typeof report[k] === 'number' ? report[k] : 0)
+				}
+			}
+
+			report[concept] = sum
+		}
+	}
+
 	return {
 		...response,
 		fiscalYear,
@@ -289,6 +312,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		facts: factsFiltered,
 		report: factsFiltered.length > 0 ? reportFocus : null,
 		xml,
-		periodReports: Object.values(reportByDateRange),
+		periodReports,
 	}
 }

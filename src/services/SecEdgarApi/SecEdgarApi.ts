@@ -642,6 +642,8 @@ export default class SecEdgarApi {
 	 * Search for companies from by name, sic code, or state.
 	 *
 	 * example at https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&owner=exclude&&start=0&count=100&hidefilings=0&company=Apple&match=contains
+	 *
+	 * TODO: Switch this to use output=atom in the url
 	 */
 	public async searchCompanies(params: SearchCompaniesParams) {
 		const { sic, page, itemsPerPage: itemsPerPageProp, state, company, companyMatch } = params
