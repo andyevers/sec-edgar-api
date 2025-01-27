@@ -43,9 +43,10 @@ function buildReportsFromFacts(params: {
 	fiscalYear?: number
 	facts: FactItemExtended[]
 	pathSeparator: string
+	fiscalYearEnd: string
 	cik?: number
 }) {
-	const { filing, facts, fiscalPeriod, fiscalYear, pathSeparator, cik: cikProp } = params
+	const { filing, facts, fiscalPeriod, fiscalYear, pathSeparator, cik: cikProp, fiscalYearEnd } = params
 
 	const urlParts = filing?.url.split('/') ?? []
 	const cik = cikProp ?? urlParts[urlParts.indexOf('data') ?? -1]
@@ -80,14 +81,13 @@ function buildReportsFromFacts(params: {
 	const scaleByName = new Map<string, number>()
 	const isFocusFactByDateKey = new Map<string, boolean>()
 
-	const dateYearEnd = new Date(reportFocus.dateReport)
-	const offsetByFiscalPeriod = { Q1: 9, Q2: 6, Q3: 3, Q4: 0, FY: 0 }
-	dateYearEnd.setMonth(dateYearEnd.getMonth() + (offsetByFiscalPeriod[reportFocus.fiscalPeriod] ?? 0))
+	const fiscalYearEndMonth = Number(fiscalYearEnd.substring(0, 2))
+	const fiscalYearEndDay = Number(fiscalYearEnd.substring(2))
 
 	const fiscalCalculator = new FactFiscalCalculator({
 		filings: filing ? [filing] : undefined,
 		facts: facts,
-		fiscalYearEnd: { day: dateYearEnd.getDate(), month: dateYearEnd.getMonth() + 1 },
+		fiscalYearEnd: { day: fiscalYearEndDay, month: fiscalYearEndMonth },
 	})
 
 	const fiscalsByDateKey = new Map<string, { fiscalYear: number; fiscalPeriod: FiscalPeriod }>()
@@ -262,6 +262,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		fiscalPeriod: factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalPeriodFocus')?.value as FiscalPeriod,
 		fiscalYear: Number(factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalYearFocus')?.value ?? 0) as number,
 		cik: response.header.cik,
+		fiscalYearEnd: response.header.fiscalYearEnd,
 		filing: {
 			acceptanceDateTime: response.header.acceptanceDatetime,
 			accessionNumber: accessionNumber,
@@ -284,26 +285,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 
 	// Some concepts have members, but do not have a sum. add the sum to the report.
 	const periodReports = Object.values(reportByDateRange)
-	for (const report of periodReports) {
-		for (const key in report) {
-			if (!key.includes('>')) continue
-			const parts = key.split('>')
-			const concept = parts.shift()
-			const center = parts.slice(0, -1).join('>')
-
-			if (!concept || report[concept] !== undefined) continue
-
-			let sum = 0
-			for (const k in report) {
-				const prefix = `${concept}>${center}>`
-				if (k.startsWith(prefix) && !k.split(prefix).pop()?.includes('>')) {
-					sum += Number(typeof report[k] === 'number' ? report[k] : 0)
-				}
-			}
-
-			report[concept] = sum
-		}
-	}
 
 	return {
 		...response,
