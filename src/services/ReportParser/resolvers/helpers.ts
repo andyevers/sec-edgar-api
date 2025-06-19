@@ -12,7 +12,7 @@ export type ExcludeNulls<T> = {
 }
 
 export function getSingleNullKey<T>(obj: T): keyof T | null {
-	let singleNullKey = null
+	let singleNullKey: keyof T | null = null
 	for (const key in obj) {
 		if (obj[key as keyof typeof obj] !== null) continue
 		if (singleNullKey === null) singleNullKey = key
