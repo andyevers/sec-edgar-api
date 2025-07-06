@@ -25,6 +25,7 @@ export interface Owner {
 	ownerPosition: string | null
 	isDirector: boolean
 	isOfficer: boolean
+	isTenPercentOwner: boolean
 }
 
 export interface Issuer {
@@ -36,6 +37,7 @@ export interface InsiderTransaction {
 	ownerName: string
 	ownerCik: number
 	ownerPosition: string | null
+	isTenPercentOwner: boolean
 
 	issuerCik: number
 	issuerName: string
@@ -50,6 +52,7 @@ export interface InsiderTransaction {
 	transactionDate: string
 	/**
 	 * ### Transaction Codes
+	 * - P: Purchase
 	 * - S: Sale
 	 * - V: Voluntary Reporting
 	 * - A: Grant

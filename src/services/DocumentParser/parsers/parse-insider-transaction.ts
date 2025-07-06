@@ -1,61 +1,56 @@
-import type { InsiderTransaction, Issuer, Owner, TransactionCode, XMLParams } from '../../../types'
-import HtmlTableExtractor from '../../HtmlTableExtractor'
-import { TableHTMLData } from '../../HtmlTableExtractor/HtmlTableExtractor'
+import { Owner, InsiderTransaction, TransactionCode, Issuer, XMLParams } from '../../../types'
+
+function parseTable(html: string) {
+	const rows = html.split('<tr')
+	return rows
+		.map((rowHtml) =>
+			rowHtml
+				.split('<td')
+				.map((cellHtml) => cellHtml.substring(cellHtml.indexOf('>') + 1, cellHtml.lastIndexOf('</td>')))
+				.slice(1),
+		)
+		.filter((row) => row.length > 0)
+}
+
+function stripHtml(html: string) {
+	return html
+		.replace(/<.*?>/g, '')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/\n/g, ' ')
+		.replace(/\s+/, ' ')
+		.trim()
+}
+
+function toNumber(value: string): number {
+	return Number(value.replace(/,/g, '').trim()) || 0
+}
 
 export function parseInsiderTransactions(params: XMLParams) {
 	const { xml } = params
 
-	const parser = new HtmlTableExtractor()
-	const tables = parser.extractTables(xml, {
-		stripHtml: true,
-		tagsToExclude: ['sup'],
-		stripParenthesis: true,
-		removeEmptyColumns: false,
-		getHeaderRowIndex: (data) => {
-			return data.rows.findIndex((row) => {
-				const isNotEmptyRow = row.some(
-					(cell) => cell.html.replace(/<.*?>/g, '').replace(/&.*?;/g, '').replace(/\s/g, '').length > 0,
-				)
-				return isNotEmptyRow
-			})
-		},
-	})
+	const ownerTableHeadingIndex = xml.indexOf('sortid=')
+	const transactionTableIdIndex = xml.indexOf('id="transaction-report"')
 
-	const getTableHeadHtml = (table: TableHTMLData) => {
-		const match = table.html.replace(/\n/g, '').match(/<b>.*?<\/b>/g)
-		const matches = Array.isArray(match) ? match : []
-		return matches.find((match) => match.includes('<a')) ?? null
+	if (ownerTableHeadingIndex === -1) {
+		throw new Error('Owner table heading not found in XML data')
 	}
+	const ownerTableStartIndex = xml.lastIndexOf('<table', ownerTableHeadingIndex)
+	const ownerTableEndIndex = xml.indexOf('</table>', ownerTableHeadingIndex) + 8
+	const ownerTableHtml = xml.substring(ownerTableStartIndex, ownerTableEndIndex)
 
-	const tableCompany = tables.find(
-		(table) => table.html.includes('cgi-bin/browse-edgar?action=getcompany') && getTableHeadHtml(table) !== null,
-	)
+	const transactionTableStartIndex = xml.lastIndexOf('<table', transactionTableIdIndex)
+	const transactionTableEndIndex = xml.indexOf('</table>', transactionTableIdIndex) + 8
+	const transactionTableHtml = xml.substring(transactionTableStartIndex, transactionTableEndIndex)
 
-	const tableCompanyHead = tableCompany ? getTableHeadHtml(tableCompany) || '' : ''
-	const issuerCik = Number(tableCompanyHead.split('</a>')[0]?.split('>').pop()?.trim()) || 0
-	const issuerName = tableCompanyHead.split('(')[0]?.split('>').pop()?.trim() || ''
+	const issuerUrlIndex = xml.indexOf('cgi-bin/browse-edgar?action=getcompany')
+	const issuerUrlStartIndex = xml.lastIndexOf('<b>', issuerUrlIndex) + 3
+	const issuerUrlEndIndex = xml.indexOf('</b>', issuerUrlIndex)
 
-	const cells = tableCompany?.rows.flat() ?? []
-	cells.find((cell) => cell.html.toLowerCase().includes('<b'))
+	const issuerHtml = xml.substring(issuerUrlStartIndex, issuerUrlEndIndex).trim()
+	const issuerHtmlCikStart = issuerHtml.lastIndexOf('(') + 1
 
-	const getHeaderRow = (table: TableHTMLData) => table.rows.find((row) => row.some((cell) => cell.isHeaderRowCell))
-	const findTableWithCol = (colTextLower: string) =>
-		tables.find((table) =>
-			getHeaderRow(table)?.some((cell) => String(cell.valueParsed).toLowerCase().includes(colTextLower)),
-		)
-
-	const tableOwners = findTableWithCol('type of owner')
-	const tableTransactions = findTableWithCol('security name')
-
-	const stripHtml = (html: string) =>
-		html
-			.replace(/<.*?>/g, '')
-			.replace(/&nbsp;/g, ' ')
-			.replace(/\n/g, ' ')
-			.replace(/\s+/, ' ')
-			.trim()
-
-	const ownerByCik = new Map<number, Owner>()
+	const issuerCik = toNumber(stripHtml(issuerHtml.substring(issuerHtmlCikStart, issuerHtml.lastIndexOf(')'))))
+	const issuerName = issuerHtml.substring(0, issuerHtmlCikStart - 1).trim()
 
 	const headerOwner = ['owner_name', 'filings', 'transaction_date', 'type_of_owner']
 
@@ -74,33 +69,42 @@ export function parseInsiderTransactions(params: XMLParams) {
 		'security_title',
 	]
 
-	for (const row of tableOwners?.rows ?? []) {
-		if (row[0]?.isHeaderRowCell) continue
+	const ownerByCik = new Map<number, Owner>()
 
+	const ownerRows = parseTable(ownerTableHtml)
+	const transactionRows = parseTable(transactionTableHtml)
+
+	const isSwitchedOwnerIssuer = stripHtml(ownerRows[0]?.[0]?.toLowerCase()).includes('issuer') || false
+
+	for (let i = 1; i < ownerRows.length; i++) {
+		const row = ownerRows[i]
+		// if (row.length === 0 || row[0].includes('Owner Name') || row[0].includes('Issuer')) continue // Skip header row
 		const owner: Owner = {
 			ownerName: '',
 			ownerCik: 0,
 			ownerPosition: null,
 			isDirector: false,
 			isOfficer: false,
+			isTenPercentOwner: false,
 		}
 
-		for (const cell of row) {
-			const colName = headerOwner[cell.colIndex]
-			const htmlStripped = stripHtml(cell.html)
+		for (let i = 0; i < row.length; i++) {
+			const colName = headerOwner[i]
+			const htmlStripped = stripHtml(row[i])
 
 			switch (colName) {
 				case 'owner_name':
 					owner.ownerName = htmlStripped.split('Current Name')[0]
 					break
 				case 'filings':
-					owner.ownerCik = Number(cell.valueParsed || 0) || 0
+					owner.ownerCik = toNumber(htmlStripped)
 					break
 				case 'type_of_owner': {
-					const parts = htmlStripped.split(':')
-					owner.isDirector = parts[0]?.toLowerCase().includes('director')
-					owner.isOfficer = parts[0]?.toLowerCase().includes('officer')
-					owner.ownerPosition = parts[1]?.trim() || null
+					const [ownerType, position = null] = htmlStripped.split(':').map((s) => s.toLowerCase().trim())
+					owner.isDirector = ownerType.includes('director')
+					owner.isOfficer = ownerType.includes('officer')
+					owner.isTenPercentOwner = ownerType.includes('10 percent') || ownerType.includes('10%')
+					owner.ownerPosition = position
 					break
 				}
 			}
@@ -110,9 +114,8 @@ export function parseInsiderTransactions(params: XMLParams) {
 	}
 
 	const transactions: InsiderTransaction[] = []
-
-	for (const row of tableTransactions?.rows ?? []) {
-		if (row[0]?.isHeaderRowCell) continue
+	for (const row of transactionRows) {
+		if (row.length === 0 || row[0].includes('Acquisition or Dis')) continue // Skip header row
 		const transaction: InsiderTransaction = {
 			ownerName: '',
 			ownerCik: 0,
@@ -121,7 +124,9 @@ export function parseInsiderTransactions(params: XMLParams) {
 			issuerName,
 			isDirector: false,
 			isOfficer: false,
-
+			accessionNumber: '',
+			deemedExecutionDate: '',
+			form: '',
 			/** true = buy, false = sell */
 			isAcquisition: false,
 			isDirectOwnership: false,
@@ -131,18 +136,17 @@ export function parseInsiderTransactions(params: XMLParams) {
 			transactionShares: 0,
 			sharesOwnedFollowingTransaction: 0,
 			lineNumber: 0,
-			deemedExecutionDate: '',
-			form: '',
-			accessionNumber: '',
+			isTenPercentOwner: false,
 		}
 
-		for (const cell of row) {
-			const colName = headerTransaction[cell.colIndex]
-			const htmlStripped = stripHtml(cell.html)
+		for (let i = 0; i < row.length; i++) {
+			const colName = headerTransaction[i]
+			const html = row[i]
+			const htmlStripped = stripHtml(html)
 
 			switch (colName) {
 				case 'acquisition_or_disposition':
-					transaction.isAcquisition = String(cell.valueParsed).toLowerCase() === 'a'
+					transaction.isAcquisition = String(htmlStripped).toLowerCase() === 'a'
 					break
 				case 'transaction_date':
 					transaction.transactionDate = htmlStripped
@@ -153,7 +157,7 @@ export function parseInsiderTransactions(params: XMLParams) {
 				case 'reporting_owner':
 					break
 				case 'form': {
-					const url = cell.html.match(/href="([^"]+)"/)?.[1] ?? ''
+					const url = html.match(/href="([^"]+)"/)?.[1] ?? ''
 					transaction.accessionNumber = url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('-'))
 					transaction.form = htmlStripped
 					break
@@ -165,22 +169,23 @@ export function parseInsiderTransactions(params: XMLParams) {
 					transaction.isDirectOwnership = htmlStripped.toLowerCase().includes('d')
 					break
 				case 'num_securities_transacted':
-					transaction.transactionShares = Number(cell.valueParsed) || 0
+					transaction.transactionShares = toNumber(htmlStripped) || 0
 					break
 				case 'num_securities_following':
-					transaction.sharesOwnedFollowingTransaction = Number(cell.valueParsed) || 0
+					transaction.sharesOwnedFollowingTransaction = toNumber(htmlStripped)
 					break
 				case 'line_number':
-					transaction.lineNumber = Number(cell.valueParsed) || 0
+					transaction.lineNumber = toNumber(htmlStripped)
 					break
 				case 'owner_cik': {
-					const owner = ownerByCik.get(Number(cell.valueParsed) || 0)
+					const owner = ownerByCik.get(toNumber(htmlStripped) || 0)
 					if (owner) {
 						transaction.ownerName = owner.ownerName
 						transaction.ownerCik = owner.ownerCik
 						transaction.ownerPosition = owner.ownerPosition
 						transaction.isDirector = owner.isDirector
 						transaction.isOfficer = owner.isOfficer
+						transaction.isTenPercentOwner = owner.isTenPercentOwner
 					}
 					break
 				}
@@ -192,10 +197,6 @@ export function parseInsiderTransactions(params: XMLParams) {
 
 		transactions.push(transaction)
 	}
-
-	const isSwitchedOwnerIssuer = tableTransactions?.rows?.some((r) =>
-		r.some((c) => String(c.valueParsed).toLowerCase() === 'issuer'),
-	)
 
 	let owners = Array.from(ownerByCik.values())
 	let issuers: Issuer[] = [{ issuerName, issuerCik }]
@@ -217,5 +218,9 @@ export function parseInsiderTransactions(params: XMLParams) {
 		})
 	}
 
-	return { transactions, owners, issuers }
+	return {
+		transactions: transactions,
+		owners: Array.from(ownerByCik.values()),
+		issuers,
+	}
 }
