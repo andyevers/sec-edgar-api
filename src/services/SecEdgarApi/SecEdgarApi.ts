@@ -548,8 +548,9 @@ export default class SecEdgarApi {
 		formType?: DailyFilingFormType
 		/** max 5 */
 		lookbackDays?: number
+		startsWith?: string
 	}) {
-		const { formType = 'ALL', lookbackDays = 0 } = params ?? {}
+		const { formType = 'ALL', lookbackDays = 0, startsWith = '' } = params ?? {}
 
 		if (lookbackDays > 5) {
 			throw new Error(`lookbackDays must be <= 5. Received ${lookbackDays}`)
@@ -566,7 +567,7 @@ export default class SecEdgarApi {
 		}
 
 		const indexFormType = indexByFormType[formType] ?? 0
-		const url = `${this.baseUrlSec}/cgi-bin/current?q1=${lookbackDays}&q2=${indexFormType}`
+		const url = `${this.baseUrlSec}/cgi-bin/current?q1=${lookbackDays}&q2=${indexFormType}&q3=${startsWith}`
 		const xml = (await this.request(url, true)) as string
 
 		return this.documentParser.parseCurrentFilingsDaily({ xml })
