@@ -215,6 +215,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 			form: response.header.form,
 			segments: context?.entity.segment ?? [],
 			start: start,
+			contextRef: fact.contextRef,
 		}
 
 		if (factParsed.decimals) {

@@ -72,12 +72,13 @@ export default class InstanceParser {
 		const xbrl = utilXbrl.extractXbrlObject(this.xmlParser.parse(xml))
 
 		const contexts: XbrlContext[] = utilXbrl
-			.toArray(xbrl?.context ?? xbrl?.['xbrli:context'] ?? [])
+			.toArray(xbrl?.context ?? xbrl?.['xbrli:context'] ?? xbrl?.['xbrl:context'] ?? [])
 			.map((context: any) => this.parseContext(context))
 
 		const units: XbrlUnit[] = utilXbrl.toArray(xbrl?.unit ?? []).map((unit: any) => ({
 			id: unit['@_id'] ?? '',
-			measure: unit['xbrli:measure']?.['#text'] ?? unit['measure']?.['#text'] ?? '',
+			measure:
+				unit['xbrli:measure']?.['#text'] ?? unit['measure']?.['#text'] ?? unit['xbrl:measure']?.['#text'] ?? '',
 		}))
 
 		const factElements: XbrlElement[] = []
