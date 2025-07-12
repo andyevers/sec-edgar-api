@@ -91,21 +91,32 @@ function buildReportsFromFacts(params: {
 	})
 
 	const fiscalsByDateKey = new Map<string, { fiscalYear: number; fiscalPeriod: FiscalPeriod }>()
+	const focusPeriodByQuarter: Record<string, number> = {
+		1: 3,
+		2: 6,
+		3: 9,
+		4: 12,
+	}
 
 	for (const fact of facts) {
-		const dateKey = fact.start ? `${fact.start}_${fact.end}` : fact.end
+		const period = FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end })
+		const dateKey = fact.start ? `${fact.start}_${fact.end}_${period}` : `${fact.end}_${period}`
+
+		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: fact.end })
 
 		if (!fiscalsByDateKey.has(dateKey)) {
-			const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: fact.end })
-			const period = FactPeriodResolver.getPeriod({ end: fact.end, start: fact.start })
 			const fiscalPeriod = (period === 12 && quarter === 4 ? 'FY' : `Q${quarter}`) as FiscalPeriod
 			fiscalsByDateKey.set(dateKey, { fiscalYear: year, fiscalPeriod })
 		}
 
 		const isSplitFact = fact === splitFact
+		const focusPeriod = focusPeriodByQuarter[quarter as number] ?? 0
+		const isFocusPeriod = period === focusPeriod || period === 0
+
 		const isFocusFact =
 			isFocusFactByDateKey.get(dateKey) ??
-			(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact)
+			(isFocusPeriod &&
+				(isWithinDays({ dateA: fact.end, dateB: reportFocus.dateReport, days: 45 }) || isSplitFact))
 
 		reportByDateRange[dateKey] ??= {
 			cik: reportFocus.cik,
@@ -118,7 +129,7 @@ function buildReportsFromFacts(params: {
 			startDate: fact.start ?? '',
 			endDate: fact.end,
 			fiscalYear: fiscalsByDateKey.get(dateKey)?.fiscalYear as number,
-			period: FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end }),
+			period: period,
 			isCurrentPeriod: isFocusFact,
 		}
 
