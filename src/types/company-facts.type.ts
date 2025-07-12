@@ -86,7 +86,11 @@ export interface FactItemExtended extends FactItem {
 	isCurrentPeriod?: boolean
 	decimals?: number
 	scale?: number
-	contextRef?: string
+	contextRef: string
+	label: string
+	period: number
+	quarter: number
+	fiscalYear: number
 }
 
 export interface FactItemWithFiscals extends FactItem {

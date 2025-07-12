@@ -7,6 +7,7 @@ import type {
 	XbrlContext,
 } from '../../../types'
 import { KEY_SPLIT } from '../../../util/constants'
+import { getLabelByTaxonomy } from '../../../util/util-xbrl'
 import FactFiscalCalculator from '../../ReportRawBuilder/FactFiscalCalculator'
 import FactPeriodResolver from '../../ReportRawBuilder/FactPeriodResolver'
 import { GetDocumentXbrlParams } from '../../SecEdgarApi'
@@ -43,10 +44,9 @@ function buildReportsFromFacts(params: {
 	fiscalYear?: number
 	facts: FactItemExtended[]
 	pathSeparator: string
-	fiscalYearEnd: string
 	cik?: number
 }) {
-	const { filing, facts, fiscalPeriod, fiscalYear, pathSeparator, cik: cikProp, fiscalYearEnd } = params
+	const { filing, facts, fiscalPeriod, fiscalYear, pathSeparator, cik: cikProp } = params
 
 	const urlParts = filing?.url.split('/') ?? []
 	const cik = cikProp ?? urlParts[urlParts.indexOf('data') ?? -1]
@@ -81,15 +81,6 @@ function buildReportsFromFacts(params: {
 	const scaleByName = new Map<string, number>()
 	const isFocusFactByDateKey = new Map<string, boolean>()
 
-	const fiscalYearEndMonth = Number(fiscalYearEnd.substring(0, 2))
-	const fiscalYearEndDay = Number(fiscalYearEnd.substring(2))
-
-	const fiscalCalculator = new FactFiscalCalculator({
-		filings: filing ? [filing] : undefined,
-		facts: facts,
-		fiscalYearEnd: { day: fiscalYearEndDay, month: fiscalYearEndMonth },
-	})
-
 	const fiscalsByDateKey = new Map<string, { fiscalYear: number; fiscalPeriod: FiscalPeriod }>()
 	const focusPeriodByQuarter: Record<string, number> = {
 		1: 3,
@@ -102,15 +93,13 @@ function buildReportsFromFacts(params: {
 		const period = FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end })
 		const dateKey = fact.start ? `${fact.start}_${fact.end}_${period}` : `${fact.end}_${period}`
 
-		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: fact.end })
-
 		if (!fiscalsByDateKey.has(dateKey)) {
-			const fiscalPeriod = (period === 12 && quarter === 4 ? 'FY' : `Q${quarter}`) as FiscalPeriod
-			fiscalsByDateKey.set(dateKey, { fiscalYear: year, fiscalPeriod })
+			const fiscalPeriod = (period === 12 && fact.quarter === 4 ? 'FY' : `Q${fact.quarter}`) as FiscalPeriod
+			fiscalsByDateKey.set(dateKey, { fiscalYear: fact.fiscalYear, fiscalPeriod })
 		}
 
 		const isSplitFact = fact === splitFact
-		const focusPeriod = focusPeriodByQuarter[quarter as number] ?? 0
+		const focusPeriod = focusPeriodByQuarter[fact.quarter as number] ?? 0
 		const isFocusPeriod = period === focusPeriod || period === 0
 
 		const isFocusFact =
@@ -120,7 +109,7 @@ function buildReportsFromFacts(params: {
 
 		reportByDateRange[dateKey] ??= {
 			cik: reportFocus.cik,
-			url: '',
+			url: filing?.url ?? '',
 			splitDate: splitFact?.end ?? null,
 			splitRatio: splitFact?.value ? Number(splitFact.value) : null,
 			dateFiled: reportFocus.dateFiled,
@@ -201,12 +190,21 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 
 	const { contexts = [], factElements = [] } = response.instance?.xbrl ?? {}
 
+	const labelByTaxonomy = getLabelByTaxonomy(response.linkbaseLabel?.xbrl ?? {})
+
 	const contextById = new Map<string, XbrlContext>()
 	contexts.forEach((context) => contextById.set(context.id, context))
 
 	const cik = response.header.cik
 	const accessionNumber = response.header.accessionNumber
 	const accessionNumberNoHyphens = accessionNumber.replace(/-/g, '')
+
+	const fiscalCalculator = new FactFiscalCalculator({
+		fiscalYearEnd: {
+			day: Number(response.header.fiscalYearEnd.substring(2)),
+			month: Number(response.header.fiscalYearEnd.substring(0, 2)),
+		},
+	})
 
 	const facts: FactItemExtended[] = []
 	for (const fact of factElements) {
@@ -215,6 +213,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		const end = context?.period.endDate ?? context?.period.instant ?? ''
 		const start = context?.period.startDate
 
+		const { quarter, year } = fiscalCalculator.getFiscalYearQuarter({ dateStr: end })
 		const factParsed: FactItemExtended = {
 			cik: cik,
 			end: end,
@@ -227,6 +226,10 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 			segments: context?.entity.segment ?? [],
 			start: start,
 			contextRef: fact.contextRef,
+			label: labelByTaxonomy[fact.name] ?? fact.name,
+			period: FactPeriodResolver.getPeriod({ start, end }),
+			quarter,
+			fiscalYear: year,
 		}
 
 		if (factParsed.decimals) {
@@ -245,13 +248,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 	let fiscalYear = fiscalYearFact ? Number(fiscalYearFact.value) : 0
 	let fiscalPeriod = fiscalPeriodFact ? (fiscalPeriodFact.value as FiscalPeriod) : 'FY'
 	if (!fiscalPeriodFact || !fiscalYearFact) {
-		const fiscalCalculator = new FactFiscalCalculator({
-			fiscalYearEnd: {
-				day: Number(response.header.fiscalYearEnd.substring(2)),
-				month: Number(response.header.fiscalYearEnd.substring(0, 2)),
-			},
-		})
-
 		const reportDate =
 			response.header.reportDate ??
 			response.instance?.xbrl.factElements.find((f) => f.name === 'dei:DocumentPeriodEndDate')?.text
@@ -274,7 +270,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		fiscalPeriod: factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalPeriodFocus')?.value as FiscalPeriod,
 		fiscalYear: Number(factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalYearFocus')?.value ?? 0) as number,
 		cik: response.header.cik,
-		fiscalYearEnd: response.header.fiscalYearEnd,
 		filing: {
 			acceptanceDateTime: response.header.acceptanceDatetime,
 			accessionNumber: accessionNumber,
