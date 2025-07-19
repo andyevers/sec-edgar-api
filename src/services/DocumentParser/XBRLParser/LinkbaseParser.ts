@@ -7,18 +7,20 @@ import type {
 	XbrlLinkbaseItemResource,
 	XbrlLinkbaseItemSimple,
 } from '../../../types'
+import ObjectUtil from '../ObjectUtil'
 import XMLParser from '../XMLParser'
 import utilXbrl from './util-xbrl'
 
 export default class LinkbaseParser {
 	private readonly xmlParser: XMLParser
+	private readonly objectUtil = new ObjectUtil()
 
 	constructor(args?: { xmlParser?: XMLParser }) {
 		const { xmlParser = new XMLParser() } = args ?? {}
 		this.xmlParser = xmlParser
 	}
 
-	public parse(xml: string) {
+	public parse(xml: string): XbrlLinkbase | null {
 		const parsed = utilXbrl.extractXbrlObject(this.xmlParser.parse(xml))
 		return this.parseLinkbaseDocument(parsed)
 	}
@@ -34,7 +36,17 @@ export default class LinkbaseParser {
 			}
 		}
 
-		return null
+		// if linkbase is not found, try iterating through keys to find it
+		let linkbase: XbrlLinkbase | null = null
+		this.objectUtil.iterateKeysDeep(value, (d) => {
+			const k = utilXbrl.parseKey(d.key)
+			if (k === 'linkbase') {
+				d.breakLoop()
+				linkbase = this.parseLinkbase(d.value)
+			}
+		})
+
+		return linkbase
 	}
 
 	private parseItem(

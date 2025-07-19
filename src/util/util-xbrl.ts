@@ -33,6 +33,25 @@ export function getLabelByTaxonomy(labelLinkbase: XbrlLinkbase) {
 	return labelByTaxonomy
 }
 
+function isPascaleCase(str: string) {
+	const startsWithUpperCase = str && str[0].toLowerCase() !== str[0]
+	return startsWithUpperCase && str.split('').some((c) => c.toLowerCase() === c)
+}
+
+const knownPrefixes: Record<string, boolean> = {
+	'us-gaap': true,
+	'ifrs-full': true,
+	dei: true,
+	srt: true,
+	country: true,
+}
+
 export function getTaxonomyFromId(id: string) {
-	return id.split('_').slice(1, 3).join(':')
+	const parts = id.split('_')
+	const isLabelIndicatorPosition3 = parts[2] === 'lbl'
+	const isKnownPrefixPosition1 = knownPrefixes[parts[0]] === true
+	const isNameInPosition2 =
+		parts.length <= 2 || isLabelIndicatorPosition3 || isKnownPrefixPosition1 || isPascaleCase(parts[1])
+
+	return isNameInPosition2 ? parts.slice(0, 2).join(':') : parts.slice(1, 3).join(':')
 }
