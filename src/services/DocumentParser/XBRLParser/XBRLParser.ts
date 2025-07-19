@@ -38,19 +38,33 @@ export default class XBRLParser {
 
 	private filterDocuments(documents: DocumentData[]) {
 		const xmlDocs = documents.filter((doc) => doc.fileName.endsWith('.xml') || doc.fileName.endsWith('.xsd'))
+		const instanceDoc =
+			xmlDocs.find(
+				(doc) =>
+					doc.description.toLowerCase().includes('instance doc') ||
+					doc.fileName.endsWith('_htm.xml') ||
+					(doc.content.includes('<us-gaap') && doc.content.includes('<context')),
+			) ?? null
+
 		return {
-			instanceDoc:
-				xmlDocs.find(
-					(doc) =>
-						doc.description.toLowerCase().includes('instance doc') ||
-						doc.fileName.endsWith('_htm.xml') ||
-						(doc.content.includes('<us-gaap') && doc.content.includes('<context')),
-				) ?? null,
+			instanceDoc: instanceDoc,
 			schemaDoc: xmlDocs.find((doc) => doc.fileName.endsWith('.xsd')) ?? null,
-			linkbasePresentationDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_pre.xml')) ?? null,
-			linkbaseDefinitionDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_def.xml')) ?? null,
-			linkbaseCalculationDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_cal.xml')) ?? null,
-			linkbaseLabelDoc: xmlDocs.find((doc) => doc.fileName.endsWith('_lab.xml')) ?? null,
+			linkbasePresentationDoc:
+				xmlDocs.find((doc) => doc.fileName.endsWith('_pre.xml')) ??
+				xmlDocs.find((doc) => doc !== instanceDoc && doc.content.includes('link:presentationLink>')) ??
+				null,
+			linkbaseDefinitionDoc:
+				xmlDocs.find((doc) => doc.fileName.endsWith('_def.xml')) ??
+				xmlDocs.find((doc) => doc !== instanceDoc && doc.content.includes('link:definitionLink>')) ??
+				null,
+			linkbaseCalculationDoc:
+				xmlDocs.find((doc) => doc.fileName.endsWith('_cal.xml')) ??
+				xmlDocs.find((doc) => doc !== instanceDoc && doc.content.includes('link:calculationLink>')) ??
+				null,
+			linkbaseLabelDoc:
+				xmlDocs.find((doc) => doc.fileName.endsWith('_lab.xml')) ??
+				xmlDocs.find((doc) => doc !== instanceDoc && doc.content.includes('link:labelLink>')) ??
+				null,
 		}
 	}
 
