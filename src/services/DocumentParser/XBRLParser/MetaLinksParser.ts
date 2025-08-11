@@ -5,7 +5,6 @@ import { XbrlMetaLinks } from '../../../types/metalinks.type'
  */
 export class MetaLinksParser {
 	public parse(xml: string): XbrlMetaLinks | null {
-		console.log({ xml })
 		if (!xml) return null
 		try {
 			const numberKeys = new Set(['decimals', 'order'])
