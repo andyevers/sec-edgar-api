@@ -1,8 +1,11 @@
 import type { XbrlInstance, XbrlLinkbase, XbrlSchema } from '../../../types'
+import { XbrlMetaLinks } from '../../../types/metalinks.type'
 import DocumentXmlSplitter, { DocumentData } from '../DocumentXmlSplitter'
+import FilingSummaryParser, { XbrlFilingSummary } from './FilingSummaryParser'
 import HeaderParser, { XbrlFormHeader } from './HeaderParser'
 import InstanceParser from './InstanceParser'
 import LinkbaseParser from './LinkbaseParser'
+import { MetaLinksParser } from './MetaLinksParser'
 import SchemaParser from './SchemaParser'
 
 export interface XbrlParseResult {
@@ -13,6 +16,15 @@ export interface XbrlParseResult {
 	linkbaseCalculation: XbrlDocument<XbrlLinkbase> | null
 	linkbaseDefinition: XbrlDocument<XbrlLinkbase> | null
 	linkbaseLabel: XbrlDocument<XbrlLinkbase> | null
+	/**
+	 * FilingSummary.xml content
+	 */
+	filingSummary: XbrlFilingSummary | null
+	/**
+	 * MetaLinks.json content
+	 */
+	metaLinks: XbrlMetaLinks | null
+	documents: DocumentData[]
 }
 
 interface XbrlDocument<T> {
@@ -35,6 +47,8 @@ export default class XBRLParser {
 	private readonly linkbaseParser = new LinkbaseParser()
 	private readonly instanceParser = new InstanceParser()
 	private readonly schemaParser = new SchemaParser()
+	private readonly filingSummaryParser = new FilingSummaryParser()
+	private readonly metaLinksParser = new MetaLinksParser()
 
 	private filterDocuments(documents: DocumentData[]) {
 		const xmlDocs = documents.filter((doc) => doc.fileName.endsWith('.xml') || doc.fileName.endsWith('.xsd'))
@@ -65,6 +79,8 @@ export default class XBRLParser {
 				xmlDocs.find((doc) => doc.fileName.endsWith('_lab.xml')) ??
 				xmlDocs.find((doc) => doc !== instanceDoc && doc.content.includes('link:labelLink>')) ??
 				null,
+			filingSummaryDoc: xmlDocs.find((doc) => doc.fileName === 'FilingSummary.xml') ?? null,
+			metaLinks: documents.find((doc) => doc.fileName === 'MetaLinks.json') ?? null,
 		}
 	}
 
@@ -84,6 +100,8 @@ export default class XBRLParser {
 			linkbaseLabelDoc,
 			linkbasePresentationDoc,
 			schemaDoc,
+			filingSummaryDoc,
+			metaLinks,
 		} = this.filterDocuments(documents)
 
 		const header = this.headerParser.parse(xml)
@@ -109,6 +127,9 @@ export default class XBRLParser {
 			linkbaseCalculation: this.createXbrlDocument(linkbaseCalculationDoc, linkbaseCalculation),
 			linkbaseDefinition: this.createXbrlDocument(linkbaseDefinitionDoc, linkbaseDefinition),
 			linkbaseLabel: this.createXbrlDocument(linkbaseLabelDoc, linkbaseLabel),
+			filingSummary: this.filingSummaryParser.parse(filingSummaryDoc?.content ?? ''),
+			metaLinks: this.metaLinksParser.parse(metaLinks?.content ?? ''),
+			documents,
 		}
 	}
 }
