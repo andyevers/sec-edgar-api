@@ -82,6 +82,7 @@ export default class ReportRawBuilder {
 
 		const accessionByYearQuarter = new Map<string, string>()
 		filings?.forEach((f) => {
+			if (!f.reportDate) return
 			const { year, quarter } = fiscalCalculator.getFiscalYearQuarter({ dateStr: f.reportDate })
 			accessionByYearQuarter.set(f.accessionNumber, `${year}_${quarter}`)
 		})
