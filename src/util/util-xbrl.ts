@@ -17,7 +17,17 @@ export function getLabelByTaxonomy(labelLinkbase: XbrlLinkbase) {
 			}
 
 			// label, terseLabel, or verboseLabel
-			const labelType = role.substring(role.lastIndexOf('/') + 1) as 'label' | 'terseLabel' | 'verboseLabel'
+			const labelType = role.substring(role.lastIndexOf('/') + 1) as
+				| 'label'
+				| 'terseLabel'
+				| 'verboseLabel'
+				| 'periodStartLabel'
+				| 'periodEndLabel'
+
+			// skip periodStartLabel. Used for beginning cash position, but overwrites end cash position.
+			if (labelType === 'periodStartLabel') {
+				return
+			}
 
 			if (labelType === 'verboseLabel') {
 				taxonomyWithVerboseLabels.add(taxonomy)
