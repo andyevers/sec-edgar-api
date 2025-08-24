@@ -15,6 +15,7 @@ import type {
 	FilingListItemTranslated,
 	SubmissionList,
 	CalculationMap,
+	SplitData,
 } from '../../types'
 import _cikBySymbol from '../../util/cik-by-symbol'
 import Client, { IClient } from '../Client'
@@ -53,6 +54,9 @@ export interface GetReportsRawParams {
 	includeNamePrefix?: boolean
 	adjustForSplits?: boolean
 	resolvePeriodValues?: boolean
+	filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
+	/** useful when the latest split has not shown up yet in an XBRL report */
+	splits?: SplitData[]
 }
 
 export interface GetReportsParams extends Omit<GetReportsRawParams, 'includeNamePrefix'> {
@@ -327,6 +331,9 @@ export default class SecEdgarApi {
 		adjustForSplits?: boolean
 		resolvePeriodValues?: boolean
 		calculationMap?: CalculationMap<R>
+		filings?: Pick<FilingListItemTranslated, 'form' | 'reportDate' | 'filingDate' | 'accessionNumber'>[]
+		/** useful when the latest split has not shown up yet in an XBRL report */
+		splits?: SplitData[]
 	}): Promise<(typeof params.calculationMap extends undefined ? ReportTranslated : ReportRaw & R)[]> {
 		const { calculationMap } = params
 		const reports = await this.getReportsRaw({ ...params, includeNamePrefix: true })
@@ -340,12 +347,21 @@ export default class SecEdgarApi {
 	 * Parses reports from company facts.
 	 */
 	public async getReportsRaw(params: GetReportsRawParams): Promise<ReportRaw[]> {
-		const { symbol, includeNamePrefix = false, adjustForSplits = true, resolvePeriodValues = true } = params
+		const {
+			symbol,
+			includeNamePrefix = false,
+			adjustForSplits = true,
+			resolvePeriodValues = true,
+			splits,
+			filings,
+		} = params
 		const companyFacts = await this.getFacts({ symbol })
 		const reports = this.reportParser.parseReportsRaw(companyFacts, {
 			adjustForSplits,
 			resolvePeriodValues,
 			includeNamePrefix,
+			splits,
+			filings,
 		})
 		return reports
 	}

@@ -16,10 +16,15 @@ export interface FieldDataResponse<Field extends string = string> {
 }
 
 export interface SplitData {
+	/** The filed date of the report in which the split was first filed */
 	filedFirst: string
+	/** The filed date of the report in which the split was last filed */
 	filedLast: string
+	/** The period end date of the report in which the split was first filed */
 	endFirst: string
+	/** The period end date of the report in which the split was last filed */
 	endLast: string
+	/** ex: forward split 1:20 = 20, reverse split 20:1 = 0.05 */
 	splitRatio: number
 }
 export interface FactGroup {
