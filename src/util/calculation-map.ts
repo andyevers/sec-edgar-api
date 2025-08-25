@@ -111,8 +111,8 @@ export const calculationMapCondensed: CalculationMapCondensed<ReportTranslated> 
 			['incomeNet', 1, 1],
 		],
 	],
-	eps: [[['us-gaap:EarningsPerShareBasic', 1, 0]]],
-	epsDiluted: [[['us-gaap:EarningsPerShareDiluted', 1, 0]]],
+	eps: [[['us-gaap:EarningsPerShareBasic', 1, 0]], [['us-gaap:EarningsPerShareBasicAndDiluted', 1, 0]]],
+	epsDiluted: [[['us-gaap:EarningsPerShareDiluted', 1, 0]], [['us-gaap:EarningsPerShareBasicAndDiluted', 1, 0]]],
 	equityRetainedEarnings: [[['us-gaap:RetainedEarningsAccumulatedDeficit', 1, 0]]],
 	equityTotal: [
 		[['us-gaap:StockholdersEquity', 1, 0]],
@@ -287,6 +287,10 @@ export const calculationMapCondensed: CalculationMapCondensed<ReportTranslated> 
 		[['us-gaap:WeightedAverageNumberOfSharesOutstandingBasic', 1, 0]],
 		[['us-gaap:CommonStockSharesOutstanding', 1, 0]],
 		[['dei:EntityCommonStockSharesOutstanding', 1, 0]],
+		[['us-gaap:WeightedAverageNumberOfSharesOutstandingBasicAndDiluted', 1, 0]],
 	],
-	sharesOutstandingDiluted: [[['us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding', 1, 0]]],
+	sharesOutstandingDiluted: [
+		[['us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding', 1, 0]],
+		[['us-gaap:WeightedAverageNumberOfSharesOutstandingBasicAndDiluted', 1, 0]],
+	],
 }
