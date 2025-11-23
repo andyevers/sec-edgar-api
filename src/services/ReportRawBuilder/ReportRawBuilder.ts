@@ -44,7 +44,7 @@ export default class ReportRawBuilder {
 		return this.factRecordBuilder.createFacts(companyFacts, includeNamePrefix)
 	}
 
-	private getFactKey(fact: FactItem, pathSeparator: string) {
+	public getFactKey(fact: FactItem, pathSeparator: string) {
 		const suffix = fact.segments
 			?.map(({ dimension, value }) => `${dimension}${pathSeparator}${value}`)
 			.join(pathSeparator)
