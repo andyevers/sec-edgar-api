@@ -63,5 +63,22 @@ export function getTaxonomyFromId(id: string) {
 	const isNameInPosition2 =
 		parts.length <= 2 || isLabelIndicatorPosition3 || isKnownPrefixPosition1 || isPascaleCase(parts[1])
 
-	return isNameInPosition2 ? parts.slice(0, 2).join(':') : parts.slice(1, 3).join(':')
+	const result = isNameInPosition2 ? parts.slice(0, 2).join(':') : parts.slice(1, 3).join(':')
+
+	// this happens when the prefix is touching the concept name like "loc_us-gaapAssetsCurrent_lab".
+	// The symbol "GAN" has this issue.
+	if (result.startsWith('loc:')) {
+		const idWithoutLoc = id.substring(4)
+		const knownPrefix = Object.keys(knownPrefixes).find((prefix) => idWithoutLoc.startsWith(prefix))
+		if (knownPrefix) {
+			return `${knownPrefix}:${idWithoutLoc.substring(knownPrefix.length).split('_')[0]}`
+		}
+		// custom taxonomy, assume the first capital letter followed by a lowercase is the concept name. ex: GANAssetsCurrentCustomConcept.match(/([A-Z][a-z]+)/)
+		const indexUpperFollowedByLower = idWithoutLoc.search(/[a-z]/) - 1
+		const customPrefix = idWithoutLoc.substring(0, indexUpperFollowedByLower - 1)
+		const conceptName = idWithoutLoc.substring(indexUpperFollowedByLower - 1).split('_')[0]
+		return `${customPrefix}:${conceptName}`
+	}
+
+	return result
 }
