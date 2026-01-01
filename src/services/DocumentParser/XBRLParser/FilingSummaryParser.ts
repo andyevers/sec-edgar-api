@@ -72,8 +72,8 @@ export interface XbrlFilingSummary {
 	reports: XbrlFilingSummaryReport[]
 }
 
-type XbrlFilingSummaryMenuCategory = 'Cover' | 'Statements' | 'Notes' | 'Policies' | 'Tables' | 'Details'
-type XbrlFilingSummaryReportType = 'Sheet' | 'Notes' | 'Book'
+export type XbrlFilingSummaryMenuCategory = 'Cover' | 'Statements' | 'Notes' | 'Policies' | 'Tables' | 'Details'
+export type XbrlFilingSummaryReportType = 'Sheet' | 'Notes' | 'Book'
 
 export interface XbrlFilingSummaryReport {
 	longName: string
