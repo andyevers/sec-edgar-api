@@ -9,7 +9,7 @@ export interface XbrlFilingSummaryReportWithTrees extends XbrlFilingSummaryRepor
 
 export type MemberInclusionRule = 'always' | 'inReportsWherePresent' | 'never'
 
-interface TreeNode {
+export interface TreeNode {
 	label: string
 	value: number | string | null
 	unit: string
@@ -284,4 +284,22 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 	})
 
 	return reports
+}
+
+export interface TraverseTreeNodeData {
+	node: TreeNode
+	parentNode: TreeNode | null
+	/** Root level = 0 */
+	depth: number
+}
+
+/**
+ * Traverse deeply through a report tree
+ */
+export function traverseTreeNode(rootNode: TreeNode, callback: (data: TraverseTreeNodeData) => void) {
+	const traverse = (currentNode: TreeNode, parentNode: TreeNode | null, depth: number) => {
+		callback({ node: currentNode, parentNode, depth })
+		currentNode.children?.forEach((child) => traverse(child, currentNode, depth + 1))
+	}
+	traverse(rootNode, null, 0)
 }
