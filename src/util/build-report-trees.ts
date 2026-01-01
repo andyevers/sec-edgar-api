@@ -200,6 +200,30 @@ function buildTemplateHierarchyFlat(params: {
 	return itemsById
 }
 
+function deepNestByKeys(itemsById: Map<string, HierarchyItem>): Map<string, HierarchyItem> {
+	const itemsWithChildrenByKey = new Map<string, HierarchyItem>()
+
+	itemsById.forEach((item) => {
+		const currentItem = itemsWithChildrenByKey.get(item.key)
+		if (!currentItem && item.children?.length) {
+			itemsWithChildrenByKey.set(item.key, item)
+		}
+	})
+
+	itemsById.forEach((item) => {
+		item.children?.forEach((child, i) => {
+			const currentItem = itemsWithChildrenByKey.get(child.key)
+			if (!child.children?.length && currentItem) {
+				item.children![i] = currentItem
+				currentItem.parentId = item.id
+				currentItem.parentKey = item.key
+			}
+		})
+	})
+
+	return itemsById
+}
+
 function hierarchyToTree(itemsById: Map<string, HierarchyItem>): TreeNode[] {
 	itemsById.forEach((item) => {
 		if (item.parentId) {
@@ -278,7 +302,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 
 		return {
 			...report,
-			calculationTree: hierarchyToTree(hierarchyCalc),
+			calculationTree: hierarchyToTree(deepNestByKeys(hierarchyCalc)),
 			presentationTree: hierarchyToTree(hierarchyPres),
 		}
 	})
@@ -294,12 +318,12 @@ export interface TraverseTreeNodeData {
 }
 
 /**
- * Traverse deeply through a report tree
+ * Traverse deeply through a report tree (depth first)
  */
-export function traverseTreeNode(rootNode: TreeNode, callback: (data: TraverseTreeNodeData) => void) {
-	const traverse = (currentNode: TreeNode, parentNode: TreeNode | null, depth: number) => {
-		callback({ node: currentNode, parentNode, depth })
-		currentNode.children?.forEach((child) => traverse(child, currentNode, depth + 1))
+export function traverseTree(rootNodes: TreeNode[], callback: (data: TraverseTreeNodeData) => void) {
+	const traverse = (node: TreeNode, parentNode: TreeNode | null, depth: number) => {
+		callback({ node, parentNode, depth })
+		node.children?.forEach((child) => traverse(child, node, depth + 1))
 	}
-	traverse(rootNode, null, 0)
+	rootNodes.forEach((rootNode) => traverse(rootNode, null, 0))
 }
