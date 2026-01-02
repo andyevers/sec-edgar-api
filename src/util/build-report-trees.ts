@@ -24,6 +24,7 @@ export interface TreeNode {
 interface MemberFact {
 	segments: { dimension: string; value: string }[]
 	value: string | number | null
+	label: string
 }
 
 interface HierarchyItem extends TreeNode {
@@ -105,7 +106,7 @@ function extractMemberFacts(
 
 	const allMembers = facts
 		.filter((f) => (f.segments?.length ?? 0) > 0)
-		.map((f) => ({ value: f.value, segments: f.segments! }))
+		.map((f) => ({ value: f.value, segments: f.segments!, label: f.label }))
 
 	if (memberInclusionRule === 'always') return allMembers
 
@@ -270,40 +271,51 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 
 	// Iterate through the xbrl reports and build tree structures
 	const reports: XbrlFilingSummaryReportWithTrees[] = filingSummary.reports.map((report) => {
-		const calculationLink = calculationLinks.find((link) => link.role === report.role)
-		const presentationLink = presentationLinks.find((link) => link.role === report.role)
-
-		const locatorByLabelCalc = new Map(calculationLink?.loc?.map((l) => [l.label, l]) ?? [])
-		const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
+		const calculationLinksReport = calculationLinks.filter((link) => link.role === report.role)
+		const presentationLinksReport = presentationLinks.filter((link) => link.role === report.role)
 
 		const allowedMembers = new Set<string>()
-		presentationLink?.presentationArc?.forEach((arc) => {
-			allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.to)?.href ?? ''))
-			allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.from)?.href ?? ''))
+		presentationLinksReport.forEach((presentationLink) => {
+			const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
+			presentationLink?.presentationArc?.forEach((arc) => {
+				allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.to)?.href ?? ''))
+				allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.from)?.href ?? ''))
+			})
 		})
 
-		const hierarchyCalc = buildTemplateHierarchyFlat({
-			arcs: calculationLink?.calculationArc || [],
-			labelByHref,
-			locByLabel: locatorByLabelCalc,
-			factsByConcept,
-			allowedMembers,
-			memberInclusionRule,
+		const calculationTreeNodes: TreeNode[] = []
+		const presentationTreeNodes: TreeNode[] = []
+
+		calculationLinksReport.forEach((calculationLink) => {
+			const locatorByLabelCalc = new Map(calculationLink?.loc?.map((l) => [l.label, l]) ?? [])
+			const hierarchyCalc = buildTemplateHierarchyFlat({
+				arcs: calculationLink?.calculationArc || [],
+				labelByHref,
+				locByLabel: locatorByLabelCalc,
+				factsByConcept,
+				allowedMembers,
+				memberInclusionRule,
+			})
+			calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
 		})
 
-		const hierarchyPres = buildTemplateHierarchyFlat({
-			arcs: presentationLink?.presentationArc || [],
-			labelByHref,
-			locByLabel: locatorByLabelPres,
-			factsByConcept,
-			allowedMembers,
-			memberInclusionRule,
+		presentationLinksReport.forEach((presentationLink) => {
+			const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
+			const hierarchyPres = buildTemplateHierarchyFlat({
+				arcs: presentationLink?.presentationArc || [],
+				labelByHref,
+				locByLabel: locatorByLabelPres,
+				factsByConcept,
+				allowedMembers,
+				memberInclusionRule,
+			})
+			presentationTreeNodes.push(...hierarchyToTree(hierarchyPres))
 		})
 
 		return {
 			...report,
-			calculationTree: hierarchyToTree(deepNestByKeys(hierarchyCalc)),
-			presentationTree: hierarchyToTree(hierarchyPres),
+			calculationTree: calculationTreeNodes,
+			presentationTree: presentationTreeNodes,
 		}
 	})
 
