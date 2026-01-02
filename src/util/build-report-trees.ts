@@ -322,20 +322,24 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 	return reports
 }
 
-export interface TraverseTreeNodeData {
-	node: TreeNode
-	parentNode: TreeNode | null
+export interface TraverseTreeNodeData<T extends AnyTreeNode> {
+	node: T
+	parentNode: T | null
 	/** Root level = 0 */
 	depth: number
 }
 
+interface AnyTreeNode {
+	children?: AnyTreeNode[]
+}
+
 /**
- * Traverse deeply through a report tree (depth first)
+ * Traverse through a tree structure (depth first)
  */
-export function traverseTree(rootNodes: TreeNode[], callback: (data: TraverseTreeNodeData) => void) {
-	const traverse = (node: TreeNode, parentNode: TreeNode | null, depth: number) => {
+export function traverseTree<T extends AnyTreeNode>(rootNodes: T[], callback: (data: TraverseTreeNodeData<T>) => void) {
+	const traverse = (node: T, parentNode: T | null, depth: number) => {
 		callback({ node, parentNode, depth })
-		node.children?.forEach((child) => traverse(child, node, depth + 1))
+		node.children?.forEach((child) => traverse(child as T, node, depth + 1))
 	}
 	rootNodes.forEach((rootNode) => traverse(rootNode, null, 0))
 }
