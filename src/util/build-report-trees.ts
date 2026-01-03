@@ -8,6 +8,7 @@ export interface XbrlFilingSummaryReportWithTrees extends XbrlFilingSummaryRepor
 }
 
 export type MemberInclusionRule = 'always' | 'inReportsWherePresent' | 'never'
+export type RowLabelType = 'preferredLabel' | 'descriptiveLabel'
 
 export interface TreeNode {
 	label: string
@@ -125,7 +126,9 @@ function buildTemplateHierarchyFlat(params: {
 	labelByHref: Map<string, Record<string, string>>
 	factsByConcept: Map<string, FactItemExtended[]>
 	allowedMembers: Set<string>
-	memberInclusionRule?: MemberInclusionRule
+	memberInclusionRule: MemberInclusionRule
+	rowLabelType: RowLabelType
+	disablePeriodStartFacts: boolean
 }) {
 	const {
 		arcs,
@@ -133,7 +136,9 @@ function buildTemplateHierarchyFlat(params: {
 		locByLabel,
 		factsByConcept,
 		allowedMembers,
-		memberInclusionRule = 'inReportsWherePresent',
+		memberInclusionRule,
+		rowLabelType,
+		disablePeriodStartFacts,
 	} = params
 
 	const itemsById = new Map<string, HierarchyItem>()
@@ -147,6 +152,10 @@ function buildTemplateHierarchyFlat(params: {
 
 		const isPeriodStart = arc.preferredLabel?.endsWith('periodStartLabel') ?? false
 
+		if (isPeriodStart && disablePeriodStartFacts) {
+			continue
+		}
+
 		if (!itemsById.has(arc.from)) {
 			const periodFactsFrom = getPeriodFacts({ conceptKey: keyFrom, factsByConcept, isPeriodStart })
 			const membersFrom = extractMemberFacts(periodFactsFrom, memberInclusionRule, allowedMembers)
@@ -159,7 +168,12 @@ function buildTemplateHierarchyFlat(params: {
 				parentKey: null,
 				weight: 1,
 				order: 0,
-				label: getBestLabel({ href: hrefFrom, labelByHref, preferredLabel: arc.preferredLabel }) ?? keyFrom,
+				label:
+					getBestLabel({
+						href: hrefFrom,
+						labelByHref,
+						preferredLabel: rowLabelType === 'preferredLabel' ? arc.preferredLabel : undefined,
+					}) ?? keyFrom,
 				isPeriodStart,
 				period: primaryFactFrom?.period || 0,
 				value: primaryFactFrom?.value ?? null,
@@ -180,7 +194,12 @@ function buildTemplateHierarchyFlat(params: {
 			parentKey: arc.from ? hrefToKey(hrefFrom) : null,
 			weight: arc.weight || 1,
 			order: arc.order || 0,
-			label: getBestLabel({ href: hrefTo, labelByHref, preferredLabel: arc.preferredLabel }) ?? keyTo,
+			label:
+				getBestLabel({
+					href: hrefTo,
+					labelByHref,
+					preferredLabel: rowLabelType === 'preferredLabel' ? arc.preferredLabel : undefined,
+				}) ?? keyTo,
 			isPeriodStart,
 			period: primaryFactTo?.period || 0,
 			value: primaryFactTo?.value ?? null,
@@ -245,16 +264,36 @@ function hierarchyToTree(itemsById: Map<string, HierarchyItem>): TreeNode[] {
 
 export interface BuildReportTreesParams {
 	xbrlJson: DocumentXbrlResult
+
 	/**
 	 * Where members should be included in the tree nodes.
 	 *
 	 * @default 'inReportsWherePresent'
 	 */
 	memberInclusionRule?: MemberInclusionRule
+
+	/**
+	 * Which label type to use for row labels.
+	 *
+	 * @default 'preferredLabel'
+	 */
+	rowLabelType?: RowLabelType
+
+	/**
+	 * Disable inclusion of period start facts in the tree.
+	 *
+	 * @default false
+	 */
+	disablePeriodStartFacts?: boolean
 }
 
 export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSummaryReportWithTrees[] {
-	const { xbrlJson, memberInclusionRule = 'inReportsWherePresent' } = params
+	const {
+		xbrlJson,
+		memberInclusionRule = 'inReportsWherePresent',
+		rowLabelType = 'preferredLabel',
+		disablePeriodStartFacts = false,
+	} = params
 	const filingSummary = xbrlJson.filingSummary
 
 	if (!filingSummary) return []
@@ -295,6 +334,8 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				factsByConcept,
 				allowedMembers,
 				memberInclusionRule,
+				rowLabelType,
+				disablePeriodStartFacts,
 			})
 			calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
 		})
@@ -308,6 +349,8 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				factsByConcept,
 				allowedMembers,
 				memberInclusionRule,
+				rowLabelType,
+				disablePeriodStartFacts,
 			})
 			presentationTreeNodes.push(...hierarchyToTree(hierarchyPres))
 		})
