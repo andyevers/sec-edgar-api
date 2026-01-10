@@ -22,10 +22,9 @@ export interface TreeNode {
 	children?: TreeNode[]
 }
 
-interface MemberFact {
-	segments: { dimension: string; value: string }[]
+export interface MemberFact {
+	segments: { dimension: string; value: string; label: string }[]
 	value: string | number | null
-	label: string
 }
 
 interface HierarchyItem extends TreeNode {
@@ -107,12 +106,15 @@ function extractMemberFacts(
 
 	const allMembers = facts
 		.filter((f) => (f.segments?.length ?? 0) > 0)
-		.map((f) => ({ value: f.value, segments: f.segments!, label: f.label }))
+		.map((f) => ({
+			value: f.value,
+			segments: f.segments!.map((s) => ({ dimension: s.dimension, value: s.value, label: f.label })),
+		}))
 
 	if (memberInclusionRule === 'always') return allMembers
 
 	return allMembers.filter((m) =>
-		m.segments.every((s) => allowedMembers?.has(s.value) && allowedMembers?.has(s.dimension)),
+		m.segments?.every((s) => allowedMembers?.has(s.value) && allowedMembers?.has(s.dimension)),
 	)
 }
 
@@ -325,6 +327,9 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		const calculationTreeNodes: TreeNode[] = []
 		const presentationTreeNodes: TreeNode[] = []
 
+		const calculationHierarchiesFlat: Map<string, HierarchyItem>[] = []
+		const presentationHierarchiesFlat: Map<string, HierarchyItem>[] = []
+
 		calculationLinksReport.forEach((calculationLink) => {
 			const locatorByLabelCalc = new Map(calculationLink?.loc?.map((l) => [l.label, l]) ?? [])
 			const hierarchyCalc = buildTemplateHierarchyFlat({
@@ -337,7 +342,8 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				rowLabelType,
 				disablePeriodStartFacts,
 			})
-			calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
+
+			calculationHierarchiesFlat.push(hierarchyCalc)
 		})
 
 		presentationLinksReport.forEach((presentationLink) => {
@@ -352,7 +358,35 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				rowLabelType,
 				disablePeriodStartFacts,
 			})
+
+			presentationHierarchiesFlat.push(hierarchyPres)
+		})
+
+		const labelByKey = new Map<string, string>()
+		presentationHierarchiesFlat.forEach((hierarchyPres) => {
+			hierarchyPres.forEach((item) => labelByKey.set(item.key, item.label))
+		})
+
+		// Need to add member labels
+		const mapMembers = (hierarchyFlat: Map<string, HierarchyItem>) => {
+			hierarchyFlat.forEach((item) => {
+				if (!item.members) return
+				item.members = item.members.filter((m) => m.segments?.every((s) => labelByKey.has(s.value)))
+				item.members?.forEach((member) => {
+					member.segments.forEach((segment) => {
+						segment.label = labelByKey.get(segment.value) || segment.value
+					})
+				})
+			})
+		}
+
+		presentationHierarchiesFlat.forEach((hierarchyPres) => {
+			mapMembers(hierarchyPres)
 			presentationTreeNodes.push(...hierarchyToTree(hierarchyPres))
+		})
+		calculationHierarchiesFlat.forEach((hierarchyCalc) => {
+			mapMembers(hierarchyCalc)
+			calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
 		})
 
 		return {
