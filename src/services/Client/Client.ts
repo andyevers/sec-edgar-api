@@ -39,6 +39,7 @@ export interface ClientArgs {
 export interface IClient {
 	request(params: RequestParams): Promise<ClientResponse>
 	setDefaultHeaders?(headers: Record<string, string>): void
+	setUserAgent?(userAgent: string): void
 }
 
 export default class Client implements IClient {
@@ -50,8 +51,9 @@ export default class Client implements IClient {
 			httpClient: https,
 			defaultHeaders: {
 				// this can be any user agent, just not empty
-				'User-Agent':
-					'Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 RuxitSynthetic/1.0 v1060014908909962014 t8797611264074608560 ath259cea6f altpriv cvcv=2 smf=0',
+				'Accept-Encoding': 'gzip, deflate',
+				Host: 'www.sec.gov',
+				'User-Agent': 'Sample Company Name AdminContact@samplecompanydomain.com',
 			},
 		},
 	) {
@@ -62,6 +64,10 @@ export default class Client implements IClient {
 
 	public setDefaultHeaders(headers: Record<string, string>) {
 		this.defaultHeaders = headers
+	}
+
+	public setUserAgent(userAgent: string) {
+		this.defaultHeaders['User-Agent'] = userAgent
 	}
 
 	public request(params: RequestParams): Promise<ClientResponse> {

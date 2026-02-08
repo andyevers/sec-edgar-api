@@ -23,7 +23,7 @@ describe('SecEdgarApi', () => {
 		AAPL: 123,
 	}
 
-	const secEdgarApi = new SecEdgarApi({ cikBySymbol, throttler, client, reportParser, documentParser })
+	const secEdgarApi = new SecEdgarApi({}, { cikBySymbol, throttler, client, reportParser, documentParser })
 
 	test('getFact', async () => {
 		const add = jest.spyOn(throttler, 'add')

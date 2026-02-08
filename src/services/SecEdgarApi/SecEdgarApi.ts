@@ -26,13 +26,24 @@ import FilingMapper from './FilingMapper'
 import SubmissionRequestWrapper, { SendRequestParams } from './RequestWrapper'
 import Throttler, { IThrottler } from './Throttler'
 
-interface SecApiArgs {
+interface SecApiDeps {
 	throttler: IThrottler
 	client: IClient
 	cikBySymbol: Record<string, number>
 	reportParser: ReportParser
 	documentParser: DocumentParser
 	filingMapper?: FilingMapper
+}
+
+interface SecApiArgs {
+	/**
+	 * Highly recommended as this is required by the SEC.
+	 *
+	 * @see https://www.sec.gov/about/webmaster-frequently-asked-questions#developers
+	 *
+	 * @example "Sample Company Name AdminContact@samplecompanydomain.com"
+	 */
+	userAgent?: string
 }
 
 export interface CreateRequestWrapperParams {
@@ -136,7 +147,8 @@ export default class SecEdgarApi {
 	public readonly documentParser: DocumentParser
 
 	constructor(
-		args: SecApiArgs = {
+		args: SecApiArgs = {},
+		deps: SecApiDeps = {
 			client: new Client(),
 			throttler: new Throttler(),
 			cikBySymbol: _cikBySymbol,
@@ -145,7 +157,10 @@ export default class SecEdgarApi {
 			filingMapper: new FilingMapper(),
 		},
 	) {
-		const { client, throttler, cikBySymbol, reportParser, documentParser, filingMapper = new FilingMapper() } = args
+		const { userAgent = 'Sample Company Name AdminContact@samplecompanydomain.com' } = args
+		const { client, throttler, cikBySymbol, reportParser, documentParser, filingMapper = new FilingMapper() } = deps
+
+		client.setUserAgent?.(userAgent)
 		this.client = client
 		this.throttler = throttler
 		this.cikBySymbol = cikBySymbol
