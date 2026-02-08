@@ -51,8 +51,7 @@ export default class Client implements IClient {
 			httpClient: https,
 			defaultHeaders: {
 				// this can be any user agent, just not empty
-				Host: 'www.sec.gov',
-				'User-Agent': 'Sample Company Name AdminContact@samplecompanydomain.com',
+				'User-Agent': 'Sample Company Name myemail@email.com',
 			},
 		},
 	) {
@@ -83,7 +82,10 @@ export default class Client implements IClient {
 			timeout = 86400000,
 		} = params
 
-		const allHeaders = { ...this.defaultHeaders, ...headers }
+		const allHeaders: Record<string, string> = {
+			...this.defaultHeaders,
+			...headers,
+		}
 
 		return new Promise((resolve, reject) => {
 			let responseData = ''
@@ -145,7 +147,9 @@ export default class Client implements IClient {
 			request.setTimeout(timeout, () => reject(`timeout after ${timeout}ms`))
 
 			for (const key in allHeaders) {
-				request.setHeader(key, allHeaders[key])
+				if (allHeaders[key]) {
+					request.setHeader(key, allHeaders[key])
+				}
 			}
 
 			if (data) {
