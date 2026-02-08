@@ -51,7 +51,6 @@ export default class Client implements IClient {
 			httpClient: https,
 			defaultHeaders: {
 				// this can be any user agent, just not empty
-				'Accept-Encoding': 'gzip, deflate',
 				Host: 'www.sec.gov',
 				'User-Agent': 'Sample Company Name AdminContact@samplecompanydomain.com',
 			},
