@@ -10,6 +10,17 @@ export interface SetReportDatesParams {
 	accn: string
 }
 
+interface FilterFilingParams {
+	filings: FilingListItemTranslated[]
+	fiscalYearStart?: number
+	fiscalYearEnd?: number
+	fiscalYear?: number
+	fiscalQuarters?: number[]
+	isEarningsReport?: boolean
+	formTypes?: string[]
+	limit?: number
+}
+
 /**
  * Gets the fiscal period for a given date. does this by checking when the FY end periods are,
  * Then measures the offset from the end date to the next/previous fiscal year end.
@@ -363,5 +374,58 @@ export default class FactFiscalCalculator {
 		const quarter = getFiscalQuarter(daysFromYearEnd)
 
 		return { quarter, year: fiscalYear }
+	}
+
+	public getFilingFiscalYearQuarter(params: { filing: FilingListItemTranslated }) {
+		const { filing } = params
+		const fiscalsReport = filing.reportDate ? this.getFiscalYearQuarter({ dateStr: filing.reportDate }) : null
+		return {
+			fiscalQuarter: fiscalsReport?.quarter ?? null,
+			fiscalYear: fiscalsReport?.year ?? null,
+		}
+	}
+
+	public filterFilings(params: FilterFilingParams): FilingListItemTranslated[] {
+		const {
+			filings,
+			fiscalQuarters,
+			fiscalYear,
+			fiscalYearEnd,
+			fiscalYearStart,
+			formTypes,
+			isEarningsReport,
+			limit,
+		} = params
+
+		const earningsFormsSet = new Set(FORMS_EARNINGS)
+		const formTypesSet = formTypes ? new Set(formTypes) : null
+		const fiscalQuartersSet = fiscalQuarters ? new Set(fiscalQuarters) : null
+
+		const filingsFiltered: FilingListItemTranslated[] = []
+
+		for (const filing of filings) {
+			if (limit && filingsFiltered.length >= limit) break
+			if (isEarningsReport && !earningsFormsSet.has(filing.form)) continue
+			if (formTypesSet && !formTypesSet.has(filing.form)) continue
+
+			const { fiscalQuarter: filingFiscalQuarter, fiscalYear: filingFiscalYear } =
+				this.getFilingFiscalYearQuarter({ filing })
+
+			if (!filingFiscalYear || !filingFiscalQuarter) continue
+			if (fiscalQuartersSet && !fiscalQuartersSet.has(filingFiscalQuarter)) continue
+			if (fiscalYear && fiscalYear !== filingFiscalYear) continue
+			if (fiscalQuartersSet && !fiscalQuartersSet.has(filingFiscalQuarter)) continue
+			if (fiscalYearStart && filingFiscalYear < fiscalYearStart) continue
+			if (fiscalYearEnd && filingFiscalYear > fiscalYearEnd) continue
+
+			filingsFiltered.push(filing)
+		}
+
+		return filingsFiltered
+	}
+
+	public findFiling(params: Omit<FilterFilingParams, 'limit'>): FilingListItemTranslated | null {
+		const filings = this.filterFilings({ ...params, limit: 1 })
+		return filings[0] ?? null
 	}
 }
