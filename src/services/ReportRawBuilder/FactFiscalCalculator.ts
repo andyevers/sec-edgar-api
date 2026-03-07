@@ -18,6 +18,8 @@ interface FilterFilingParams {
 	fiscalQuarters?: number[]
 	isEarningsReport?: boolean
 	formTypes?: string[]
+	isXBRL?: boolean
+	isInlineXBRL?: boolean
 	limit?: number
 }
 
@@ -395,6 +397,8 @@ export default class FactFiscalCalculator {
 			formTypes,
 			isEarningsReport,
 			limit,
+			isXBRL,
+			isInlineXBRL,
 		} = params
 
 		const earningsFormsSet = new Set(FORMS_EARNINGS)
@@ -417,6 +421,8 @@ export default class FactFiscalCalculator {
 			if (fiscalQuartersSet && !fiscalQuartersSet.has(filingFiscalQuarter)) continue
 			if (fiscalYearStart && filingFiscalYear < fiscalYearStart) continue
 			if (fiscalYearEnd && filingFiscalYear > fiscalYearEnd) continue
+			if (typeof isXBRL === 'boolean' && isXBRL !== Boolean(filing.isXBRL)) continue
+			if (typeof isInlineXBRL === 'boolean' && isInlineXBRL !== Boolean(filing.isInlineXBRL)) continue
 
 			filingsFiltered.push(filing)
 		}
