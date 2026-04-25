@@ -213,7 +213,19 @@ function buildTemplateHierarchyFlat(params: {
 		if (!itemsById.has(arc.to)) {
 			itemsById.set(arc.to, hierarchyTo)
 		} else {
-			Object.assign(itemsById.get(arc.to)!, hierarchyTo)
+			const existing = itemsById.get(arc.to)!
+			// A concept can appear as `from` in earlier arcs (we accumulate
+			// `children` via the `push` below) and as `to` in a later arc. The
+			// fresh `hierarchyTo` always has `children: []`; a blind
+			// `Object.assign` would clear already-linked children. Example:
+			// pretax is created as a parent, adds Operating, then the same
+			// pretax is attached under Net income — the second `hierarchyTo`
+			// for pretax would wipe [Operating, Nonop] down to [].
+			const priorChildren = existing.children
+			Object.assign(existing, hierarchyTo)
+			if (priorChildren && priorChildren.length > 0) {
+				existing.children = priorChildren
+			}
 		}
 
 		itemsById.get(arc.from)!.children!.push(itemsById.get(arc.to)!)
