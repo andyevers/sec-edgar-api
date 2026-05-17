@@ -299,6 +299,18 @@ export interface BuildReportTreesParams {
 	 * @default false
 	 */
 	disablePeriodStartFacts?: boolean
+
+	/**
+	 * Stitch disconnected calculation islands by value rollup.
+	 *
+	 * Many filers define calculation arcs in isolated groups rather than a
+	 * single connected tree. When enabled, a leaf whose value equals the
+	 * signed sum of orphan roots is expanded to parent those orphans,
+	 * producing a deeper connected tree.
+	 *
+	 * @default false
+	 */
+	stitchCalcIslands?: boolean
 }
 
 export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSummaryReportWithTrees[] {
@@ -307,6 +319,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		memberInclusionRule = 'inReportsWherePresent',
 		rowLabelType = 'preferredLabel',
 		disablePeriodStartFacts = false,
+		stitchCalcIslands = false,
 	} = params
 	const filingSummary = xbrlJson.filingSummary
 
@@ -403,7 +416,9 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 
 		return {
 			...report,
-			calculationTree: calculationTreeNodes,
+			calculationTree: stitchCalcIslands
+				? stitchCalcIslandsByValueRollup(calculationTreeNodes)
+				: calculationTreeNodes,
 			presentationTree: presentationTreeNodes,
 		}
 	})
@@ -411,6 +426,196 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 	return reports
 }
 
+// Calc-island stitching helpers
+
+function stripNamespace(key: string): string {
+	const colonIdx = key.indexOf(':')
+	if (colonIdx !== -1) return key.slice(colonIdx + 1)
+	const underscoreIdx = key.indexOf('_')
+	if (underscoreIdx !== -1) return key.slice(underscoreIdx + 1)
+	return key
+}
+
+function numericValue(node: TreeNode): number | null {
+	if (typeof node.value === 'number' && isFinite(node.value)) return node.value
+	if (typeof node.value === 'string') {
+		const parsed = Number(node.value)
+		if (isFinite(parsed)) return parsed
+	}
+	return null
+}
+
+const STITCH_EXCLUDED_UNITS = new Set(['shares', 'usdPerShare'])
+
+function isExcludedStitchRoot(node: TreeNode): boolean {
+	return STITCH_EXCLUDED_UNITS.has(node.unit)
+}
+
+function collectLeaves(node: TreeNode): TreeNode[] {
+	if (!node.children?.length) return [node]
+	const leaves: TreeNode[] = []
+	for (const child of node.children) leaves.push(...collectLeaves(child))
+	return leaves
+}
+
+function collectNonLeafValues(root: TreeNode): Set<number> {
+	const values = new Set<number>()
+	function walk(node: TreeNode) {
+		if (node.children?.length) {
+			const v = numericValue(node)
+			if (v !== null) values.add(v)
+			for (const child of node.children) walk(child)
+		}
+	}
+	walk(root)
+	return values
+}
+
+function findLeafByKey(node: TreeNode, key: string): TreeNode | null {
+	if (node.key === key && (!node.children || node.children.length === 0)) return node
+	for (const child of node.children ?? []) {
+		const found = findLeafByKey(child, key)
+		if (found) return found
+	}
+	return null
+}
+
+function findLeafByKeyInRoots(roots: TreeNode[], key: string): TreeNode | null {
+	for (const root of roots) {
+		const found = findLeafByKey(root, key)
+		if (found) return found
+	}
+	return null
+}
+
+function popcount(x: number): number {
+	let c = 0
+	while (x) {
+		c += x & 1
+		x >>= 1
+	}
+	return c
+}
+
+/**
+ * Find a subset of `candidates` whose values sum to `target` within
+ * tolerance, trying both +/- signs for each candidate (disconnected orphan
+ * roots have no parent arc to indicate add vs subtract).
+ *
+ * Complexity is O(3^n) — for each candidate we try: excluded, +value,
+ * −value.  With n ≤ 10 that's ≤ 59 049 iterations.
+ */
+function findSubsetSummingTo(candidates: TreeNode[], target: number): TreeNode[] | null {
+	const n = candidates.length
+	if (n > 10) return null
+
+	const values: number[] = []
+	for (const c of candidates) {
+		const v = numericValue(c)
+		if (v === null || v === 0) values.push(NaN)
+		else values.push(v)
+	}
+
+	for (let mask = 3; mask < 1 << n; mask++) {
+		if (popcount(mask) < 2) continue
+
+		const indices: number[] = []
+		let allValid = true
+		for (let i = 0; i < n; i++) {
+			if (mask & (1 << i)) {
+				if (isNaN(values[i]!)) {
+					allValid = false
+					break
+				}
+				indices.push(i)
+			}
+		}
+		if (!allValid) continue
+
+		const k = indices.length
+		const signCombos = 1 << k
+		for (let s = 0; s < signCombos; s++) {
+			let sum = 0
+			for (let j = 0; j < k; j++) {
+				sum += s & (1 << j) ? -values[indices[j]!]! : values[indices[j]!]!
+			}
+			if (sum === target) {
+				return indices.map((i) => candidates[i]!)
+			}
+		}
+	}
+	return null
+}
+
+/**
+ * Reject a stitch when every orphan root's value already appears on a
+ * non-leaf node in the target tree (redundant variant).
+ */
+function orphansAlreadyRepresented(orphans: TreeNode[], nonLeafValues: Set<number>): boolean {
+	return orphans.every((o) => {
+		const v = numericValue(o)
+		return v !== null && nonLeafValues.has(v)
+	})
+}
+
+interface ValueRollupStitch {
+	leafKey: string
+	orphans: TreeNode[]
+}
+
+function findBestValueRollupStitch(roots: TreeNode[], candidateOrphans: TreeNode[]): ValueRollupStitch | null {
+	for (const root of roots) {
+		const leaves = collectLeaves(root)
+		const nonLeafValues = collectNonLeafValues(root)
+
+		for (const leaf of leaves) {
+			const leafVal = numericValue(leaf)
+			if (leafVal === null || leafVal === 0) continue
+
+			const orphansForThisRoot = candidateOrphans.filter(
+				(o) => stripNamespace(o.key) !== stripNamespace(root.key),
+			)
+			if (orphansForThisRoot.length < 2) continue
+
+			const match = findSubsetSummingTo(orphansForThisRoot, leafVal)
+			if (match && match.length >= 2) {
+				if (orphansAlreadyRepresented(match, nonLeafValues)) continue
+				return { leafKey: leaf.key, orphans: match }
+			}
+		}
+	}
+	return null
+}
+
+function stitchCalcIslandsByValueRollup(roots: TreeNode[]): TreeNode[] {
+	if (roots.length < 3) return roots
+
+	const candidateOrphans = roots.filter((r) => {
+		if (isExcludedStitchRoot(r)) return false
+		if (numericValue(r) === null && !r.children?.length) return false
+		return true
+	})
+	if (candidateOrphans.length < 2) return roots
+
+	const best = findBestValueRollupStitch(roots, candidateOrphans)
+	if (!best) return roots
+
+	function cloneNode(n: TreeNode): TreeNode {
+		return { ...n, children: n.children ? n.children.map(cloneNode) : undefined }
+	}
+
+	const clonedRoots = roots.map(cloneNode)
+	const targetLeaf = findLeafByKeyInRoots(clonedRoots, best.leafKey)
+	if (!targetLeaf) return roots
+
+	const attachNorms = new Set(best.orphans.map((n) => stripNamespace(n.key)))
+	const clonedOrphans = best.orphans.map((n) => cloneNode(n))
+	targetLeaf.children = [...(targetLeaf.children ?? []), ...clonedOrphans]
+
+	return clonedRoots.filter((r) => !attachNorms.has(stripNamespace(r.key)))
+}
+
+// Tree traversal utility
 export interface TraverseTreeNodeData<T extends AnyTreeNode> {
 	node: T
 	parentNode: T | null
