@@ -28,6 +28,13 @@ export interface DocumentXbrlResult extends XbrlParseResult {
 	xml: string
 	/** Facts grouped into reports by their start and end dates */
 	periodReports: ReportWithPeriod[]
+	/**
+	 * When true (default), {@link buildReportTrees} sets a line item's displayed
+	 * amount to the sum of its dimensional member facts when there is no
+	 * primary (non-dimensional) numeric fact and every member shares the same
+	 * dimensional axis stack (same axes in the same order; member slice values may differ).
+	 */
+	rollupParentValueFromSingleAxisMembers?: boolean
 }
 
 function isWithinDays(params: { dateA: string | number | Date; dateB: string | number | Date; days: number }) {
@@ -185,7 +192,8 @@ function buildReportsFromFacts(params: {
 
 export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXbrlResult {
 	const parser = new XBRLParser()
-	const { xml, includeReport = true, ...options } = params
+	const { xml, includeReport = true, rollupParentValueFromSingleAxisMembers, ...options } = params
+	const rollupParentValueFromSingleAxisMembersResolved = rollupParentValueFromSingleAxisMembers !== false
 	const response = parser.parse(xml, options)
 
 	const { contexts = [], factElements = [] } = response.instance?.xbrl ?? {}
@@ -290,7 +298,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		},
 	})
 
-	// Some concepts have members, but do not have a sum. add the sum to the report.
+	/** Parent totals for segmented facts are derived in {@link buildReportTrees} when enabled. */
 	const periodReports = Object.values(reportByDateRange)
 
 	return {
@@ -301,5 +309,6 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		report: factsFiltered.length > 0 ? reportFocus : null,
 		xml,
 		periodReports,
+		rollupParentValueFromSingleAxisMembers: rollupParentValueFromSingleAxisMembersResolved,
 	}
 }

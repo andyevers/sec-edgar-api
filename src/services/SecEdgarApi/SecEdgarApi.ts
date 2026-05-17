@@ -127,6 +127,12 @@ export interface GetDocumentXbrlParams {
 	includeInstance?: boolean
 	includeLinkbases?: boolean
 	includeSchema?: boolean
+	/**
+	 * When true (default), dimensional member facts that share the same axis
+	 * stack can be summed for the parent line when no non-dimensional numeric
+	 * fact exists for that concept (see {@link DocumentXbrlResult.rollupParentValueFromSingleAxisMembers}).
+	 */
+	rollupParentValueFromSingleAxisMembers?: boolean
 }
 
 /**

@@ -1,6 +1,7 @@
 import { DocumentXbrlResult } from '../services/DocumentParser/parsers/parse-xbrl'
 import { XbrlFilingSummaryReport } from '../services/DocumentParser/XBRLParser/FilingSummaryParser'
 import { FactItemExtended, XbrlLinkbase, XbrlLinkbaseItemArc, XbrlLinkbaseItemLocator } from '../types'
+import { resolveConceptTreeValue } from './member-fact-rollup'
 
 export interface XbrlFilingSummaryReportWithTrees extends XbrlFilingSummaryReport {
 	calculationTree: TreeNode[]
@@ -131,6 +132,7 @@ function buildTemplateHierarchyFlat(params: {
 	memberInclusionRule: MemberInclusionRule
 	rowLabelType: RowLabelType
 	disablePeriodStartFacts: boolean
+	rollupParentValueFromSingleAxisMembers: boolean
 }) {
 	const {
 		arcs,
@@ -141,6 +143,7 @@ function buildTemplateHierarchyFlat(params: {
 		memberInclusionRule,
 		rowLabelType,
 		disablePeriodStartFacts,
+		rollupParentValueFromSingleAxisMembers,
 	} = params
 
 	const itemsById = new Map<string, HierarchyItem>()
@@ -178,7 +181,11 @@ function buildTemplateHierarchyFlat(params: {
 					}) ?? keyFrom,
 				isPeriodStart,
 				period: primaryFactFrom?.period || 0,
-				value: primaryFactFrom?.value ?? null,
+				value: resolveConceptTreeValue({
+					primary: primaryFactFrom,
+					members: membersFrom,
+					rollupParentValueFromSingleAxisMembers,
+				}),
 				unit: primaryFactFrom?.unit ?? '',
 				members: membersFrom,
 				children: [],
@@ -204,7 +211,11 @@ function buildTemplateHierarchyFlat(params: {
 				}) ?? keyTo,
 			isPeriodStart,
 			period: primaryFactTo?.period || 0,
-			value: primaryFactTo?.value ?? null,
+			value: resolveConceptTreeValue({
+				primary: primaryFactTo,
+				members: membersTo,
+				rollupParentValueFromSingleAxisMembers,
+			}),
 			unit: primaryFactTo?.unit ?? '',
 			members: membersTo,
 			children: [],
@@ -280,6 +291,16 @@ export interface BuildReportTreesParams {
 	xbrlJson: DocumentXbrlResult
 
 	/**
+	 * When true (default), a concept with no primary (non-dimensional) numeric
+	 * fact but dimensional members that share the **same axis stack** (same
+	 * dimensions in the same order on every row) gets a row value equal to the
+	 * sum of those member values. Controlled by
+	 * {@link DocumentXbrlResult.rollupParentValueFromSingleAxisMembers} unless
+	 * overridden here.
+	 */
+	rollupParentValueFromSingleAxisMembers?: boolean
+
+	/**
 	 * Where members should be included in the tree nodes.
 	 *
 	 * @default 'inReportsWherePresent'
@@ -320,7 +341,12 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		rowLabelType = 'preferredLabel',
 		disablePeriodStartFacts = false,
 		stitchCalcIslands = false,
+		rollupParentValueFromSingleAxisMembers: rollupOverride,
 	} = params
+	const rollupParentValueFromSingleAxisMembers =
+		rollupOverride !== undefined
+			? rollupOverride
+			: xbrlJson.rollupParentValueFromSingleAxisMembers !== false
 	const filingSummary = xbrlJson.filingSummary
 
 	if (!filingSummary) return []
@@ -366,6 +392,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				memberInclusionRule,
 				rowLabelType,
 				disablePeriodStartFacts,
+				rollupParentValueFromSingleAxisMembers,
 			})
 
 			calculationHierarchiesFlat.push(hierarchyCalc)
@@ -382,6 +409,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 				memberInclusionRule,
 				rowLabelType,
 				disablePeriodStartFacts,
+				rollupParentValueFromSingleAxisMembers,
 			})
 
 			presentationHierarchiesFlat.push(hierarchyPres)
@@ -449,6 +477,11 @@ const STITCH_EXCLUDED_UNITS = new Set(['shares', 'usdPerShare'])
 
 function isExcludedStitchRoot(node: TreeNode): boolean {
 	return STITCH_EXCLUDED_UNITS.has(node.unit)
+}
+
+function collectAllKeys(node: TreeNode, out: Set<string>): void {
+	out.add(stripNamespace(node.key))
+	for (const child of node.children ?? []) collectAllKeys(child, out)
 }
 
 function collectLeaves(node: TreeNode): TreeNode[] {
@@ -608,11 +641,27 @@ function stitchCalcIslandsByValueRollup(roots: TreeNode[]): TreeNode[] {
 	const targetLeaf = findLeafByKeyInRoots(clonedRoots, best.leafKey)
 	if (!targetLeaf) return roots
 
-	const attachNorms = new Set(best.orphans.map((n) => stripNamespace(n.key)))
-	const clonedOrphans = best.orphans.map((n) => cloneNode(n))
-	targetLeaf.children = [...(targetLeaf.children ?? []), ...clonedOrphans]
+	// Collect all keys already in the target tree to prevent duplicates
+	// and circular references after stitching.
+	const targetKeys = new Set<string>()
+	for (const root of clonedRoots) collectAllKeys(root, targetKeys)
 
-	return clonedRoots.filter((r) => !attachNorms.has(stripNamespace(r.key)))
+	const safeOrphans: TreeNode[] = []
+	for (const orphan of best.orphans) {
+		const orphanKeys = new Set<string>()
+		collectAllKeys(orphan, orphanKeys)
+		let overlap = false
+		orphanKeys.forEach((ok) => {
+			if (targetKeys.has(ok)) overlap = true
+		})
+		if (!overlap) safeOrphans.push(cloneNode(orphan))
+	}
+	if (safeOrphans.length === 0) return roots
+
+	targetLeaf.children = [...(targetLeaf.children ?? []), ...safeOrphans]
+
+	const attachedNorms = new Set(safeOrphans.map((n) => stripNamespace(n.key)))
+	return clonedRoots.filter((r) => !attachedNorms.has(stripNamespace(r.key)))
 }
 
 // Tree traversal utility
