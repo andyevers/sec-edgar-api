@@ -292,9 +292,12 @@ export interface BuildReportTreesParams {
 
 	/**
 	 * When true (default), a concept with no primary (non-dimensional) numeric
-	 * fact but dimensional members that share the **same axis stack** (same
-	 * dimensions in the same order on every row) gets a row value equal to the
-	 * sum of those member values. Controlled by
+	 * fact derives its row value from its dimensional members. Members are
+	 * grouped by their ordered axis (dimension) signature, which also keeps a
+	 * 2-segment row from being summed together with a 3-segment row. The row
+	 * value is the member sum when either a single axis group is present, or
+	 * multiple axis groups each sum to the **same** value (independent
+	 * breakdowns of the same total agree). Controlled by
 	 * {@link DocumentXbrlResult.rollupParentValueFromSingleAxisMembers} unless
 	 * overridden here.
 	 */

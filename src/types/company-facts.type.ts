@@ -84,6 +84,13 @@ export interface FactItem {
 export interface FactItemExtended extends FactItem {
 	isUsedInReport?: boolean
 	isCurrentPeriod?: boolean
+	/**
+	 * True when this fact was not present in the filing but was synthesized by
+	 * rolling up the concept's dimensional member facts (see
+	 * {@link sumMembersByAxisAgreement}) because the concept had no primary
+	 * (non-dimensional) fact of its own.
+	 */
+	isMemberRollupGenerated?: boolean
 	decimals?: number
 	scale?: number
 	contextRef: string

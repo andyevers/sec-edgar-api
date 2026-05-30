@@ -136,4 +136,104 @@ describe('member-fact-rollup', () => {
 			}),
 		).toBe(null)
 	})
+
+	test('resolveConceptTreeValue rolls up when two single-axis groups agree on the same total', () => {
+		expect(
+			resolveConceptTreeValue({
+				primary: null,
+				members: [
+					// Breakdown by class of stock.
+					{ segments: [{ dimension: 'us-gaap:StatementClassOfStockAxis', value: 's:ClassA', label: '' }], value: 600 },
+					{ segments: [{ dimension: 'us-gaap:StatementClassOfStockAxis', value: 's:ClassB', label: '' }], value: 400 },
+					// Independent breakdown by equity component, same 1,000 total.
+					{
+						segments: [{ dimension: 'us-gaap:StatementEquityComponentsAxis', value: 'us-gaap:CommonStockMember', label: '' }],
+						value: 1000,
+					},
+				],
+				rollupParentValueFromSingleAxisMembers: true,
+			}),
+		).toBe(1000)
+	})
+
+	test('resolveConceptTreeValue does not roll up when axis groups disagree', () => {
+		expect(
+			resolveConceptTreeValue({
+				primary: null,
+				members: [
+					{ segments: [{ dimension: 'us-gaap:StatementClassOfStockAxis', value: 's:ClassA', label: '' }], value: 600 },
+					{ segments: [{ dimension: 'us-gaap:StatementClassOfStockAxis', value: 's:ClassB', label: '' }], value: 400 },
+					{
+						segments: [{ dimension: 'us-gaap:StatementEquityComponentsAxis', value: 'us-gaap:CommonStockMember', label: '' }],
+						value: 999,
+					},
+				],
+				rollupParentValueFromSingleAxisMembers: true,
+			}),
+		).toBe(null)
+	})
+
+	test('resolveConceptTreeValue rolls up when a 3-segment child breakdown sums to the 2-segment total', () => {
+		const twoSegA = [
+			{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+			{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segA', label: '' },
+		]
+		const twoSegB = [
+			{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+			{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segB', label: '' },
+		]
+		const threeSeg = (product: string, value: number) => ({
+			segments: [
+				{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+				{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segA', label: '' },
+				{ dimension: 'srt:ProductOrServiceAxis', value: product, label: '' },
+			],
+			value,
+		})
+		expect(
+			resolveConceptTreeValue({
+				primary: null,
+				members: [
+					// 2-segment group sums to 100.
+					{ segments: twoSegA, value: 70 },
+					{ segments: twoSegB, value: 30 },
+					// 3-segment child breakdown of the same data also sums to 100.
+					threeSeg('p1', 40),
+					threeSeg('p2', 60),
+				],
+				rollupParentValueFromSingleAxisMembers: true,
+			}),
+		).toBe(100)
+	})
+
+	test('resolveConceptTreeValue does not roll up when the 3-segment breakdown is partial', () => {
+		const twoSegA = [
+			{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+			{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segA', label: '' },
+		]
+		const twoSegB = [
+			{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+			{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segB', label: '' },
+		]
+		const threeSeg = (product: string, value: number) => ({
+			segments: [
+				{ dimension: 'srt:ConsolidationItemsAxis', value: 'x', label: '' },
+				{ dimension: 'us-gaap:OperatingSegmentsAxis', value: 'segA', label: '' },
+				{ dimension: 'srt:ProductOrServiceAxis', value: product, label: '' },
+			],
+			value,
+		})
+		expect(
+			resolveConceptTreeValue({
+				primary: null,
+				members: [
+					{ segments: twoSegA, value: 70 },
+					{ segments: twoSegB, value: 30 },
+					// Only part of the 3-segment breakdown is present → sums to 40, not 100.
+					threeSeg('p1', 40),
+				],
+				rollupParentValueFromSingleAxisMembers: true,
+			}),
+		).toBe(null)
+	})
 })

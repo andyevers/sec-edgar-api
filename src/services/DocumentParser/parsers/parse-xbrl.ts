@@ -7,6 +7,7 @@ import type {
 	XbrlContext,
 } from '../../../types'
 import { KEY_SPLIT } from '../../../util/constants'
+import { RollupMemberFact, sumMembersByAxisAgreement } from '../../../util/member-fact-rollup'
 import { getLabelByTaxonomy } from '../../../util/util-xbrl'
 import FactFiscalCalculator from '../../ReportRawBuilder/FactFiscalCalculator'
 import FactPeriodResolver from '../../ReportRawBuilder/FactPeriodResolver'
@@ -29,10 +30,13 @@ export interface DocumentXbrlResult extends XbrlParseResult {
 	/** Facts grouped into reports by their start and end dates */
 	periodReports: ReportWithPeriod[]
 	/**
-	 * When true (default), {@link buildReportTrees} sets a line item's displayed
-	 * amount to the sum of its dimensional member facts when there is no
-	 * primary (non-dimensional) numeric fact and every member shares the same
-	 * dimensional axis stack (same axes in the same order; member slice values may differ).
+	 * When true (default), a line item with no primary (non-dimensional) numeric
+	 * fact derives its amount from its dimensional members — both in the flat
+	 * period reports (see {@link parseXbrl}) and in {@link buildReportTrees}.
+	 * Members are grouped by their ordered axis signature (which keeps a
+	 * 2-segment row from being summed with a 3-segment row), and the amount is
+	 * the member sum when either a single axis group is present or multiple axis
+	 * groups each sum to the same value.
 	 */
 	rollupParentValueFromSingleAxisMembers?: boolean
 }
@@ -52,8 +56,17 @@ function buildReportsFromFacts(params: {
 	facts: FactItemExtended[]
 	pathSeparator: string
 	cik?: number
+	rollupParentValueFromSingleAxisMembers: boolean
 }) {
-	const { filing, facts, fiscalPeriod, fiscalYear, pathSeparator, cik: cikProp } = params
+	const {
+		filing,
+		facts,
+		fiscalPeriod,
+		fiscalYear,
+		pathSeparator,
+		cik: cikProp,
+		rollupParentValueFromSingleAxisMembers,
+	} = params
 
 	const urlParts = filing?.url.split('/') ?? []
 	const cik = cikProp ?? urlParts[urlParts.indexOf('data') ?? -1]
@@ -187,6 +200,74 @@ function buildReportsFromFacts(params: {
 		}
 	}
 
+	// Derive a value for concepts that have no primary (non-dimensional) fact but
+	// whose dimensional members corroborate a single total — same axis-grouping
+	// rollup used by buildReportTrees (see sumMembersByAxisAgreement). The rolled
+	// value is added to the period report, the focus report, and a synthetic
+	// primary fact (flagged isMemberRollupGenerated) so consumers that read the
+	// `facts` array see it too.
+	if (rollupParentValueFromSingleAxisMembers) {
+		const dateKeyForFact = (fact: FactItemExtended) => {
+			const period = FactPeriodResolver.getPeriod({ start: fact.start, end: fact.end })
+			return fact.start ? `${fact.start}_${fact.end}_${period}` : `${fact.end}_${period}`
+		}
+
+		const memberFactsByDateConcept = new Map<string, Map<string, FactItemExtended[]>>()
+		const primaryConceptsByDate = new Map<string, Set<string>>()
+
+		for (const fact of Array.from(factByName.values())) {
+			const dateKey = dateKeyForFact(fact)
+
+			if ((fact.segments?.length ?? 0) > 0) {
+				const byConcept =
+					memberFactsByDateConcept.get(dateKey) ??
+					memberFactsByDateConcept.set(dateKey, new Map()).get(dateKey)!
+				const members = byConcept.get(fact.name) ?? byConcept.set(fact.name, []).get(fact.name)!
+				members.push(fact)
+			} else {
+				const primaries =
+					primaryConceptsByDate.get(dateKey) ?? primaryConceptsByDate.set(dateKey, new Set()).get(dateKey)!
+				primaries.add(fact.name)
+			}
+		}
+
+		for (const [dateKey, byConcept] of Array.from(memberFactsByDateConcept.entries())) {
+			const report = reportByDateRange[dateKey]
+			if (!report) continue
+
+			for (const [conceptName, memberFacts] of Array.from(byConcept.entries())) {
+				if (primaryConceptsByDate.get(dateKey)?.has(conceptName)) continue
+				if (report[conceptName] !== undefined) continue
+
+				const rollupMembers: RollupMemberFact[] = memberFacts.map((m) => ({
+					segments: m.segments ?? [],
+					value: m.value,
+				}))
+				const rolledValue = sumMembersByAxisAgreement(rollupMembers)
+				if (rolledValue === null) continue
+
+				report[conceptName] = rolledValue
+				if (report.isCurrentPeriod && reportFocus[conceptName] === undefined) {
+					reportFocus[conceptName] = rolledValue
+				}
+
+				// Synthesize a primary fact from a representative member so the
+				// rolled value is also available in the `facts` array.
+				const template = memberFacts[0]!
+				const syntheticFact: FactItemExtended = {
+					...template,
+					value: rolledValue,
+					segments: [],
+					hasSegments: false,
+					isMemberRollupGenerated: true,
+					isCurrentPeriod: Boolean(report.isCurrentPeriod),
+					isUsedInReport: Boolean(report.isCurrentPeriod),
+				}
+				factByName.set(`${conceptName}-${dateKey}`, syntheticFact)
+			}
+		}
+	}
+
 	return { reportFocus, reportByDateRange, factsFiltered: Array.from(factByName.values()) }
 }
 
@@ -278,6 +359,7 @@ export function parseXbrl(params: XMLParams & GetDocumentXbrlParams): DocumentXb
 		fiscalPeriod: factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalPeriodFocus')?.value as FiscalPeriod,
 		fiscalYear: Number(factsForBuilder.find((f) => f.name === 'dei:DocumentFiscalYearFocus')?.value ?? 0) as number,
 		cik: response.header.cik,
+		rollupParentValueFromSingleAxisMembers: rollupParentValueFromSingleAxisMembersResolved,
 		filing: {
 			acceptanceDateTime: response.header.acceptanceDatetime,
 			accessionNumber: accessionNumber,
