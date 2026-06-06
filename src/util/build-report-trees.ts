@@ -887,10 +887,31 @@ function rerootValidatedAbstractTotals(node: TreeNode): TreeNode {
 				const others = children.filter((_, i) => i !== twinIdx)
 				const reps = others.map(trailingSubtotalValue)
 				if (reps.every((r): r is number => r !== null)) {
-					const sum = reps.reduce((acc, r) => acc + r, 0)
 					const tol = Math.max(1, Math.abs(total) * ABSTRACT_TOTAL_RECONCILE_TOLERANCE)
+					// (1) Unsigned additive reconciliation — balance-sheet style,
+					// where every component adds to the grand total.
+					const sum = reps.reduce((acc, r) => acc + r, 0)
 					if (Math.abs(sum - total) <= tol) {
 						return { ...node, children: [{ ...twin, children: others }] }
+					}
+					// (2) Signed reconciliation — cash-flow style. Investing /
+					// financing sections store each line as a positive magnitude
+					// with the inflow/outflow direction carried only in the
+					// (here absent) calculation weight, so the unsigned sum never
+					// matches the net total. Reconstruct the sign from the
+					// concept's label tokens (see `inferCashFlowSignWeight`) and
+					// re-root only when the signed sum validates, stamping the
+					// resolved sign onto each child so the mapper computes the
+					// parent correctly. Restricted to all-leaf component sets to
+					// avoid mis-signing nested subtotals.
+					const allLeaves = others.every((o) => !(o.children && o.children.length > 0))
+					if (allLeaves) {
+						const signs = others.map(inferCashFlowSignWeight)
+						const signedSum = reps.reduce((acc, r, i) => acc + signs[i]! * r, 0)
+						if (Math.abs(signedSum - total) <= tol) {
+							const signedChildren = others.map((o, i) => ({ ...o, weight: signs[i]! }))
+							return { ...node, children: [{ ...twin, children: signedChildren }] }
+						}
 					}
 				}
 			}
