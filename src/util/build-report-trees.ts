@@ -803,11 +803,13 @@ export function mergePresentationOnlyNodesIntoCalculation(
 		.map((node) => (options?.resolveAbstractTwinSubtotals ? resolveAbstractTwinSubtotals(node) : node))
 
 	const merged = calculationWithInferredRollups.concat(presentationOnlyRoots)
-	// Complete the re-root: a re-rooted total (e.g. `Assets`) left an empty
-	// abstract placeholder (`AssetsCurrentAbstract`) where the real subtotal
-	// (`AssetsCurrent`) lives as a separate calc-native root. Adopt that root
-	// under the total when the children then fully reconcile.
-	const finalTree = options?.rerootValidatedAbstractTotals ? adoptCalcRootsUnderRerootedTotals(merged) : merged
+	// Complete the re-root: resolve the abstract groupings a re-rooted total
+	// (e.g. `Assets`) parents into concrete subtotals — collapse those with a
+	// surviving trailing subtotal (`PropertyPlantAndEquipmentNetAbstract` →
+	// `…AfterAccumulated…`) and adopt calc-native roots for emptied
+	// placeholders (`AssetsCurrentAbstract` → top-level `AssetsCurrent`), only
+	// when the resolved children reconcile to the total.
+	const finalTree = options?.rerootValidatedAbstractTotals ? resolveAbstractChildrenUnderTotals(merged) : merged
 
 	return {
 		...report,
@@ -898,6 +900,10 @@ function rerootValidatedAbstractTotals(node: TreeNode): TreeNode {
 	return { ...node, children: node.children ? children : undefined }
 }
 
+function isAbstractKey(node: TreeNode): boolean {
+	return stripNamespace(node.key).toLowerCase().endsWith('abstract')
+}
+
 /**
  * Returns true when `node` is an abstract grouping (`…Abstract`) that carries
  * no numeric value anywhere in its subtree — typically because its real
@@ -906,19 +912,97 @@ function rerootValidatedAbstractTotals(node: TreeNode): TreeNode {
  * calculation root).
  */
 function isEmptyAbstractPlaceholder(node: TreeNode): boolean {
-	return stripNamespace(node.key).toLowerCase().endsWith('abstract') && trailingSubtotalValue(node) === null
+	return isAbstractKey(node) && trailingSubtotalValue(node) === null
+}
+
+function reconciles(sum: number, target: number): boolean {
+	return Math.abs(sum - target) <= Math.max(1, Math.abs(target) * ABSTRACT_TOTAL_RECONCILE_TOLERANCE)
+}
+
+/**
+ * Find the trailing run of `stack` that rolls up to `node`'s value, either as a
+ * plain additive sum (`Before = Σ components`) or as a net-of-contra subtotal
+ * where the last item is subtracted (`After = Before − AccumulatedDepreciation`).
+ * Returns the run's start index and whether the last item is a contra, scanning
+ * longest-trailing-run first so a subtotal claims everything since the prior
+ * boundary. `null` when nothing reconciles.
+ */
+function findRollupRun(stack: TreeNode[], node: TreeNode): { start: number; contraLast: boolean } | null {
+	const target = numericValue(node)
+	if (target === null) return null
+	for (let start = 0; start <= stack.length - 1; start++) {
+		const run = stack.slice(start)
+		const sum = run.reduce((acc, n) => acc + (numericValue(n) ?? 0), 0)
+		if (reconciles(sum, target)) return { start, contraLast: false }
+	}
+	for (let start = 0; start <= stack.length - 2; start++) {
+		const run = stack.slice(start)
+		const last = numericValue(run[run.length - 1]!) ?? 0
+		const sum = run.slice(0, -1).reduce((acc, n) => acc + (numericValue(n) ?? 0), 0) - last
+		if (reconciles(sum, target)) return { start, contraLast: true }
+	}
+	return null
+}
+
+/**
+ * Reconstruct the nested subtotal hierarchy implied by a flat list of
+ * presentation siblings. Scans left→right with a stack: when a node rolls up a
+ * trailing run (see {@link findRollupRun}) those nodes become its children
+ * (the contra item, if any, gets weight −1). E.g. the flat PPE block
+ * `[Electric, Gas, CIP, FinanceLease, Before, AccumDepreciation, After]`
+ * becomes `After → { Before → {Electric, Gas, CIP, FinanceLease}, −AccumDepreciation }`.
+ */
+function buildSubtotalHierarchy(siblings: TreeNode[]): TreeNode[] {
+	const stack: TreeNode[] = []
+	for (const node of siblings) {
+		const match = findRollupRun(stack, node)
+		if (match) {
+			const run = stack.splice(match.start)
+			const claimed = match.contraLast
+				? run.map((child, i) => (i === run.length - 1 ? { ...child, weight: -1 } : child))
+				: run
+			stack.push({ ...node, children: [...(node.children ?? []), ...claimed] })
+		} else {
+			stack.push(node)
+		}
+	}
+	return stack
+}
+
+/**
+ * Collapse an abstract grouping onto its concrete subtotal hierarchy: the flat
+ * detail under an `…Abstract` (e.g. `PropertyPlantAndEquipmentNetAbstract`)
+ * encodes a nested roll-up via its subtotals. Rebuild that hierarchy and, when
+ * it resolves to a single concrete top-level subtotal, replace the abstract
+ * with it — keeping the calculation tree free of null-valued `…Abstract` nodes
+ * acting as load-bearing parents (and avoiding duplicated detail lines).
+ * Bottom-up so nested groupings resolve first.
+ */
+function collapseAbstractOntoTrailingSubtotal(node: TreeNode): TreeNode {
+	const children = (node.children ?? []).map(collapseAbstractOntoTrailingSubtotal)
+	if (isAbstractKey(node) && children.length > 0) {
+		const grouped = buildSubtotalHierarchy(children)
+		if (grouped.length === 1 && numericValue(grouped[0]!) !== null) {
+			return grouped[0]!
+		}
+	}
+	return { ...node, children: node.children ? children : undefined }
 }
 
 /**
  * Completes {@link rerootValidatedAbstractTotals}: a re-rooted grand total
- * (e.g. `Assets`) can be left parenting an *empty* abstract placeholder
- * (`AssetsCurrentAbstract`) when that section's real subtotal (`AssetsCurrent`)
- * exists only as a separate calc-native root. Replace each such placeholder
- * with the matching top-level calc root (by abstract→twin key) and remove that
- * root from the top level — but only when doing so makes the total's children
- * fully reconcile to its value, so the adoption is value-validated and safe.
+ * (e.g. `Assets`) is left parenting abstract groupings rather than concrete
+ * subtotals. Resolve each abstract child to a concrete-valued node — value
+ * validated so it only fires when the resolved children reconcile to the total:
+ *
+ *  - **Collapse** an abstract whose trailing subtotal survives in the
+ *    presentation branch onto that subtotal (e.g.
+ *    `PropertyPlantAndEquipmentNetAbstract` → `…AfterAccumulated…` = 83,651).
+ *  - **Adopt** an *empty* abstract placeholder whose subtotal lives only as a
+ *    separate calc-native root (`AssetsCurrentAbstract` → top-level
+ *    `AssetsCurrent`), pulling that root in and removing it from the top level.
  */
-function adoptCalcRootsUnderRerootedTotals(roots: TreeNode[]): TreeNode[] {
+function resolveAbstractChildrenUnderTotals(roots: TreeNode[]): TreeNode[] {
 	const topLevelByKey = new Map<string, { node: TreeNode; idx: number }>()
 	roots.forEach((root, idx) => {
 		const norm = stripNamespace(root.key).toLowerCase()
@@ -929,33 +1013,28 @@ function adoptCalcRootsUnderRerootedTotals(roots: TreeNode[]): TreeNode[] {
 	const visit = (node: TreeNode): TreeNode => {
 		const children = (node.children ?? []).map(visit)
 		const total = numericValue(node)
-		if (total !== null && total !== 0 && children.length >= 1) {
-			const adoptions = new Map<number, { root: TreeNode; rootIdx: number }>()
-			children.forEach((child, ci) => {
-				if (!isEmptyAbstractPlaceholder(child)) return
-				const twin = stripNamespace(child.key).slice(0, -'Abstract'.length).toLowerCase()
-				const match = topLevelByKey.get(twin)
-				if (match && !adoptedIdx.has(match.idx) && numericValue(match.node) !== null) {
-					adoptions.set(ci, { root: match.node, rootIdx: match.idx })
-				}
-			})
-			if (adoptions.size > 0) {
-				const reps = children.map((child, ci) => {
-					const adoption = adoptions.get(ci)
-					return adoption ? numericValue(adoption.root) : trailingSubtotalValue(child)
-				})
-				if (reps.every((r): r is number => r !== null)) {
-					const sum = reps.reduce((acc, r) => acc + r, 0)
-					const tol = Math.max(1, Math.abs(total) * ABSTRACT_TOTAL_RECONCILE_TOLERANCE)
-					if (Math.abs(sum - total) <= tol) {
-						const adoptedChildren = children.map((child, ci) => {
-							const adoption = adoptions.get(ci)
-							if (!adoption) return child
-							adoptedIdx.add(adoption.rootIdx)
-							return adoption.root
-						})
-						return { ...node, children: adoptedChildren }
+		if (total !== null && total !== 0 && children.length >= 1 && children.some(isAbstractKey)) {
+			type Resolution = { node: TreeNode; rep: number | null; rootIdx?: number }
+			const resolutions: Resolution[] = children.map((child) => {
+				if (!isAbstractKey(child)) return { node: child, rep: trailingSubtotalValue(child) }
+				if (isEmptyAbstractPlaceholder(child)) {
+					const twin = stripNamespace(child.key).slice(0, -'Abstract'.length).toLowerCase()
+					const match = topLevelByKey.get(twin)
+					if (match && !adoptedIdx.has(match.idx) && numericValue(match.node) !== null) {
+						return { node: match.node, rep: numericValue(match.node), rootIdx: match.idx }
 					}
+					return { node: child, rep: null }
+				}
+				const collapsed = collapseAbstractOntoTrailingSubtotal(child)
+				return { node: collapsed, rep: numericValue(collapsed) }
+			})
+			const reps = resolutions.map((r) => r.rep)
+			if (reps.every((r): r is number => r !== null)) {
+				const sum = reps.reduce((acc, r) => acc + r, 0)
+				const tol = Math.max(1, Math.abs(total) * ABSTRACT_TOTAL_RECONCILE_TOLERANCE)
+				if (Math.abs(sum - total) <= tol) {
+					for (const r of resolutions) if (r.rootIdx !== undefined) adoptedIdx.add(r.rootIdx)
+					return { ...node, children: resolutions.map((r) => r.node) }
 				}
 			}
 		}
