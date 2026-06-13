@@ -345,6 +345,26 @@ export interface BuildReportTreesParams {
 	stitchCalcIslands?: boolean
 
 	/**
+	 * When stitching calc islands ({@link stitchCalcIslands}), scope the
+	 * duplicate / circular-reference guard to the **target root's subtree**
+	 * (the tree the orphans are attached into) rather than the entire forest.
+	 *
+	 * The orphan roots a stitch attaches are, by construction, themselves
+	 * top-level roots in the forest, so a forest-wide guard finds every
+	 * orphan's own key already "present" and rejects the stitch — leaving the
+	 * tree unstitched. Example: Visa's income statement leaves
+	 * `IncomeLossFromContinuingOperationsBeforeIncomeTaxes…` as a childless
+	 * calc leaf whose value (6,042M) equals
+	 * `OperatingIncomeLoss` (5,954M) + `NonoperatingIncomeExpense` (88M); a
+	 * forest-wide guard keeps those two as siblings instead of nesting them
+	 * under pretax. Scoping the guard to the target tree restores attachment
+	 * while still preventing genuine duplicates / cycles inside that tree.
+	 *
+	 * @default true
+	 */
+	stitchCalcIslandsScopeOverlapToTargetTree?: boolean
+
+	/**
 	 * Restructure presentation-only nodes (concepts present in the
 	 * presentation linkbase but absent from the calculation linkbase) into
 	 * each report's calculation tree, so the calculation tree is a superset
@@ -370,6 +390,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		rowLabelType = 'preferredLabel',
 		disablePeriodStartFacts = false,
 		stitchCalcIslands = false,
+		stitchCalcIslandsScopeOverlapToTargetTree = true,
 		appendPresentationOnlyNodesToCalculationTree = false,
 		presentationMergeOptions,
 		rollupParentValueFromSingleAxisMembers: rollupOverride,
@@ -476,7 +497,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		return {
 			...report,
 			calculationTree: stitchCalcIslands
-				? stitchCalcIslandsByValueRollup(calculationTreeNodes)
+				? stitchCalcIslandsByValueRollup(calculationTreeNodes, stitchCalcIslandsScopeOverlapToTargetTree)
 				: calculationTreeNodes,
 			presentationTree: presentationTreeNodes,
 		}
@@ -657,7 +678,7 @@ function findBestValueRollupStitch(roots: TreeNode[], candidateOrphans: TreeNode
 	return null
 }
 
-function stitchCalcIslandsByValueRollup(roots: TreeNode[]): TreeNode[] {
+function stitchCalcIslandsByValueRollup(roots: TreeNode[], scopeOverlapToTargetTree = true): TreeNode[] {
 	if (roots.length < 3) return roots
 
 	const candidateOrphans = roots.filter((r) => {
@@ -678,10 +699,21 @@ function stitchCalcIslandsByValueRollup(roots: TreeNode[]): TreeNode[] {
 	const targetLeaf = findLeafByKeyInRoots(clonedRoots, best.leafKey)
 	if (!targetLeaf) return roots
 
-	// Collect all keys already in the target tree to prevent duplicates
-	// and circular references after stitching.
+	// Collect the keys to guard against duplicates / circular references after
+	// stitching. Scope to the *target root's subtree* (the tree the orphans
+	// are attached into): the orphans are themselves top-level roots, so a
+	// forest-wide scope would find every orphan's own key already present and
+	// reject the stitch. Falling back to the forest-wide scope keeps the prior
+	// (overly conservative) behaviour available when explicitly requested.
 	const targetKeys = new Set<string>()
-	for (const root of clonedRoots) collectAllKeys(root, targetKeys)
+	const targetRoot = scopeOverlapToTargetTree
+		? clonedRoots.find((r) => findLeafByKey(r, best.leafKey) !== null)
+		: null
+	if (targetRoot) {
+		collectAllKeys(targetRoot, targetKeys)
+	} else {
+		for (const root of clonedRoots) collectAllKeys(root, targetKeys)
+	}
 
 	const safeOrphans: TreeNode[] = []
 	for (const orphan of best.orphans) {
