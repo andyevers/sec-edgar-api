@@ -1,7 +1,8 @@
 import { DocumentXbrlResult } from '../services/DocumentParser/parsers/parse-xbrl'
 import { XbrlFilingSummaryReport } from '../services/DocumentParser/XBRLParser/FilingSummaryParser'
-import { FactItemExtended, XbrlLinkbase, XbrlLinkbaseItemArc, XbrlLinkbaseItemLocator } from '../types'
+import { FactItemExtended, XbrlLinkbase, XbrlLinkbaseItemArc, XbrlLinkbaseItemExtended, XbrlLinkbaseItemLocator } from '../types'
 import { resolveConceptTreeValue } from './member-fact-rollup'
+import { extractKeysFromReportHtml } from './extract-report-html-keys'
 
 export interface XbrlFilingSummaryReportWithTrees extends XbrlFilingSummaryReport {
 	calculationTree: TreeNode[]
@@ -381,6 +382,167 @@ export interface BuildReportTreesParams {
 	 * when {@link appendPresentationOnlyNodesToCalculationTree} is enabled.
 	 */
 	presentationMergeOptions?: MergePresentationIntoCalculationOptions
+
+	/**
+	 * When true, after all other tree assembly, drop calc/presentation nodes
+	 * whose concept key does not appear on that report's R-file HTML table.
+	 * Linkbase-only lines (e.g. subsidiary concepts on a parent statement role)
+	 * are removed. Requires rendered R*.htm on the report.
+	 *
+	 * Default false — use {@link buildReportTreesWithHtmlPrune} or
+	 * {@link pruneReportsToHtmlTableKeys} to drop linkbase keys absent from the
+	 * report's R-file HTML table.
+	 *
+	 * @default false
+	 */
+	pruneToHtmlTableKeys?: boolean
+}
+
+function buildAllowedMembers(presentationLinksReport: XbrlLinkbaseItemExtended[]): Set<string> {
+	const allowedMembers = new Set<string>()
+	presentationLinksReport.forEach((presentationLink) => {
+		const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
+		presentationLink?.presentationArc?.forEach((arc) => {
+			allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.to)?.href ?? ''))
+			allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.from)?.href ?? ''))
+		})
+	})
+	return allowedMembers
+}
+
+/**
+ * Drop linkbase-only nodes that do not appear on the R-file table. Keeps
+ * abstract/container ancestors when they still have an on-table descendant.
+ */
+export function pruneTreeToHtmlKeys(roots: TreeNode[], htmlKeys: Set<string>): TreeNode[] {
+	const prune = (node: TreeNode): TreeNode | null => {
+		const prunedChildren = (node.children ?? []).map(prune).filter((n): n is TreeNode => n !== null)
+		if (!htmlKeys.has(node.key) && prunedChildren.length === 0) return null
+		const next: TreeNode = { ...node }
+		if (prunedChildren.length) next.children = prunedChildren
+		else delete next.children
+		return next
+	}
+	return roots.map(prune).filter((n): n is TreeNode => n !== null)
+}
+
+/**
+ * Prune every report's calc/presentation trees to keys visible on its R-file
+ * HTML table. Can be applied to trees from {@link buildReportTrees} (with
+ * `pruneToHtmlTableKeys: false`) for A/B comparison without rebuilding.
+ */
+export function pruneReportsToHtmlTableKeys(
+	reports: XbrlFilingSummaryReportWithTrees[],
+	xbrlJson: DocumentXbrlResult,
+): XbrlFilingSummaryReportWithTrees[] {
+	const documents = xbrlJson.documents ?? []
+
+	return reports.map((report) => {
+		const document = documents.find((d) => d.fileName === report.htmlFileName)
+		if (!document?.content || !report.htmlFileName?.endsWith('.htm')) return report
+
+		const htmlKeys = extractKeysFromReportHtml(document.content)
+		if (!htmlKeys.size) return report
+
+		return {
+			...report,
+			calculationTree: pruneTreeToHtmlKeys(report.calculationTree ?? [], htmlKeys),
+			presentationTree: pruneTreeToHtmlKeys(report.presentationTree ?? [], htmlKeys),
+		}
+	})
+}
+
+function seedCalcFromPresentationWhenEmpty(report: XbrlFilingSummaryReportWithTrees): XbrlFilingSummaryReportWithTrees {
+	if ((report.calculationTree?.length ?? 0) > 0 || !(report.presentationTree?.length ?? 0)) return report
+	return { ...report, calculationTree: deepCloneNodes(report.presentationTree) }
+}
+
+function buildSingleReportFromLinkbase(params: {
+	report: XbrlFilingSummaryReport
+	calculationLinksReport: XbrlLinkbaseItemExtended[]
+	presentationLinksReport: XbrlLinkbaseItemExtended[]
+	labelByHref: Map<string, Record<string, string>>
+	factsByConcept: Map<string, FactItemExtended[]>
+	allowedMembers: Set<string>
+	memberInclusionRule: MemberInclusionRule
+	rowLabelType: RowLabelType
+	disablePeriodStartFacts: boolean
+	rollupParentValueFromSingleAxisMembers: boolean
+	stitchCalcIslands: boolean
+	stitchCalcIslandsScopeOverlapToTargetTree: boolean
+}): XbrlFilingSummaryReportWithTrees {
+	const calculationTreeNodes: TreeNode[] = []
+	const presentationTreeNodes: TreeNode[] = []
+	const calculationHierarchiesFlat: Map<string, HierarchyItem>[] = []
+	const presentationHierarchiesFlat: Map<string, HierarchyItem>[] = []
+
+	params.calculationLinksReport.forEach((calculationLink) => {
+		const locatorByLabelCalc = new Map(calculationLink?.loc?.map((l) => [l.label, l]) ?? [])
+		calculationHierarchiesFlat.push(
+			buildTemplateHierarchyFlat({
+				arcs: calculationLink?.calculationArc || [],
+				labelByHref: params.labelByHref,
+				locByLabel: locatorByLabelCalc,
+				factsByConcept: params.factsByConcept,
+				allowedMembers: params.allowedMembers,
+				memberInclusionRule: params.memberInclusionRule,
+				rowLabelType: params.rowLabelType,
+				disablePeriodStartFacts: params.disablePeriodStartFacts,
+				rollupParentValueFromSingleAxisMembers: params.rollupParentValueFromSingleAxisMembers,
+			}),
+		)
+	})
+
+	params.presentationLinksReport.forEach((presentationLink) => {
+		const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
+		presentationHierarchiesFlat.push(
+			buildTemplateHierarchyFlat({
+				arcs: presentationLink?.presentationArc || [],
+				labelByHref: params.labelByHref,
+				locByLabel: locatorByLabelPres,
+				factsByConcept: params.factsByConcept,
+				allowedMembers: params.allowedMembers,
+				memberInclusionRule: params.memberInclusionRule,
+				rowLabelType: params.rowLabelType,
+				disablePeriodStartFacts: params.disablePeriodStartFacts,
+				rollupParentValueFromSingleAxisMembers: params.rollupParentValueFromSingleAxisMembers,
+			}),
+		)
+	})
+
+	const labelByKey = new Map<string, string>()
+	presentationHierarchiesFlat.forEach((hierarchyPres) => {
+		hierarchyPres.forEach((item) => labelByKey.set(item.key, item.label))
+	})
+
+	const mapMembers = (hierarchyFlat: Map<string, HierarchyItem>) => {
+		hierarchyFlat.forEach((item) => {
+			if (!item.members) return
+			item.members = item.members.filter((m) => m.segments?.every((s) => labelByKey.has(s.value)))
+			item.members?.forEach((member) => {
+				member.segments.forEach((segment) => {
+					segment.label = labelByKey.get(segment.value) || segment.value
+				})
+			})
+		})
+	}
+
+	presentationHierarchiesFlat.forEach((hierarchyPres) => {
+		mapMembers(hierarchyPres)
+		presentationTreeNodes.push(...hierarchyToTree(hierarchyPres))
+	})
+	calculationHierarchiesFlat.forEach((hierarchyCalc) => {
+		mapMembers(hierarchyCalc)
+		calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
+	})
+
+	return {
+		...params.report,
+		calculationTree: params.stitchCalcIslands
+			? stitchCalcIslandsByValueRollup(calculationTreeNodes, params.stitchCalcIslandsScopeOverlapToTargetTree)
+			: calculationTreeNodes,
+		presentationTree: presentationTreeNodes,
+	}
 }
 
 export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSummaryReportWithTrees[] {
@@ -393,6 +555,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		stitchCalcIslandsScopeOverlapToTargetTree = true,
 		appendPresentationOnlyNodesToCalculationTree = false,
 		presentationMergeOptions,
+		pruneToHtmlTableKeys = false,
 		rollupParentValueFromSingleAxisMembers: rollupOverride,
 	} = params
 	const rollupParentValueFromSingleAxisMembers =
@@ -413,103 +576,49 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 	const calculationLinks = xbrlJson.linkbaseCalculation?.xbrl?.calculationLink ?? []
 	const presentationLinks = xbrlJson.linkbasePresentation?.xbrl?.presentationLink ?? []
 
-	// Iterate through the xbrl reports and build tree structures
-	const reports: XbrlFilingSummaryReportWithTrees[] = filingSummary.reports.map((report) => {
+	let reports: XbrlFilingSummaryReportWithTrees[] = filingSummary.reports.map((report) => {
 		const calculationLinksReport = calculationLinks.filter((link) => link.role === report.role)
 		const presentationLinksReport = presentationLinks.filter((link) => link.role === report.role)
+		const allowedMembers = buildAllowedMembers(presentationLinksReport)
 
-		const allowedMembers = new Set<string>()
-		presentationLinksReport.forEach((presentationLink) => {
-			const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
-			presentationLink?.presentationArc?.forEach((arc) => {
-				allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.to)?.href ?? ''))
-				allowedMembers.add(hrefToKey(locatorByLabelPres.get(arc.from)?.href ?? ''))
-			})
+		const built = buildSingleReportFromLinkbase({
+			report,
+			calculationLinksReport,
+			presentationLinksReport,
+			labelByHref,
+			factsByConcept,
+			allowedMembers,
+			memberInclusionRule,
+			rowLabelType,
+			disablePeriodStartFacts,
+			rollupParentValueFromSingleAxisMembers,
+			stitchCalcIslands,
+			stitchCalcIslandsScopeOverlapToTargetTree,
 		})
-
-		const calculationTreeNodes: TreeNode[] = []
-		const presentationTreeNodes: TreeNode[] = []
-
-		const calculationHierarchiesFlat: Map<string, HierarchyItem>[] = []
-		const presentationHierarchiesFlat: Map<string, HierarchyItem>[] = []
-
-		calculationLinksReport.forEach((calculationLink) => {
-			const locatorByLabelCalc = new Map(calculationLink?.loc?.map((l) => [l.label, l]) ?? [])
-			const hierarchyCalc = buildTemplateHierarchyFlat({
-				arcs: calculationLink?.calculationArc || [],
-				labelByHref,
-				locByLabel: locatorByLabelCalc,
-				factsByConcept,
-				allowedMembers,
-				memberInclusionRule,
-				rowLabelType,
-				disablePeriodStartFacts,
-				rollupParentValueFromSingleAxisMembers,
-			})
-
-			calculationHierarchiesFlat.push(hierarchyCalc)
-		})
-
-		presentationLinksReport.forEach((presentationLink) => {
-			const locatorByLabelPres = new Map(presentationLink?.loc?.map((l) => [l.label, l]) ?? [])
-			const hierarchyPres = buildTemplateHierarchyFlat({
-				arcs: presentationLink?.presentationArc || [],
-				labelByHref,
-				locByLabel: locatorByLabelPres,
-				factsByConcept,
-				allowedMembers,
-				memberInclusionRule,
-				rowLabelType,
-				disablePeriodStartFacts,
-				rollupParentValueFromSingleAxisMembers,
-			})
-
-			presentationHierarchiesFlat.push(hierarchyPres)
-		})
-
-		const labelByKey = new Map<string, string>()
-		presentationHierarchiesFlat.forEach((hierarchyPres) => {
-			hierarchyPres.forEach((item) => labelByKey.set(item.key, item.label))
-		})
-
-		// Need to add member labels
-		const mapMembers = (hierarchyFlat: Map<string, HierarchyItem>) => {
-			hierarchyFlat.forEach((item) => {
-				if (!item.members) return
-				item.members = item.members.filter((m) => m.segments?.every((s) => labelByKey.has(s.value)))
-				item.members?.forEach((member) => {
-					member.segments.forEach((segment) => {
-						segment.label = labelByKey.get(segment.value) || segment.value
-					})
-				})
-			})
-		}
-
-		presentationHierarchiesFlat.forEach((hierarchyPres) => {
-			mapMembers(hierarchyPres)
-			presentationTreeNodes.push(...hierarchyToTree(hierarchyPres))
-		})
-		calculationHierarchiesFlat.forEach((hierarchyCalc) => {
-			mapMembers(hierarchyCalc)
-			calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
-		})
-
-		return {
-			...report,
-			calculationTree: stitchCalcIslands
-				? stitchCalcIslandsByValueRollup(calculationTreeNodes, stitchCalcIslandsScopeOverlapToTargetTree)
-				: calculationTreeNodes,
-			presentationTree: presentationTreeNodes,
-		}
+		return seedCalcFromPresentationWhenEmpty(built)
 	})
 
 	if (appendPresentationOnlyNodesToCalculationTree) {
-		return reports.map((report) =>
+		reports = reports.map((report) =>
 			mergePresentationOnlyNodesIntoCalculation(report, presentationMergeOptions),
 		)
 	}
 
+	if (pruneToHtmlTableKeys) {
+		return pruneReportsToHtmlTableKeys(reports, xbrlJson)
+	}
+
 	return reports
+}
+
+/**
+ * Same as {@link buildReportTrees} with R-file HTML key pruning enabled.
+ * Compare against `buildReportTrees` (prune off).
+ */
+export function buildReportTreesWithHtmlPrune(
+	params: Omit<BuildReportTreesParams, 'pruneToHtmlTableKeys'>,
+): XbrlFilingSummaryReportWithTrees[] {
+	return buildReportTrees({ ...params, pruneToHtmlTableKeys: true })
 }
 
 // Calc-island stitching helpers
