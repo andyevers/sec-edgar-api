@@ -1,6 +1,12 @@
 import { DocumentXbrlResult } from '../services/DocumentParser/parsers/parse-xbrl'
 import { XbrlFilingSummaryReport } from '../services/DocumentParser/XBRLParser/FilingSummaryParser'
-import { FactItemExtended, XbrlLinkbase, XbrlLinkbaseItemArc, XbrlLinkbaseItemExtended, XbrlLinkbaseItemLocator } from '../types'
+import {
+	FactItemExtended,
+	XbrlLinkbase,
+	XbrlLinkbaseItemArc,
+	XbrlLinkbaseItemExtended,
+	XbrlLinkbaseItemLocator,
+} from '../types'
 import { resolveConceptTreeValue } from './member-fact-rollup'
 import { extractKeysFromReportHtml } from './extract-report-html-keys'
 
@@ -559,9 +565,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		rollupParentValueFromSingleAxisMembers: rollupOverride,
 	} = params
 	const rollupParentValueFromSingleAxisMembers =
-		rollupOverride !== undefined
-			? rollupOverride
-			: xbrlJson.rollupParentValueFromSingleAxisMembers !== false
+		rollupOverride !== undefined ? rollupOverride : xbrlJson.rollupParentValueFromSingleAxisMembers !== false
 	const filingSummary = xbrlJson.filingSummary
 
 	if (!filingSummary) return []
@@ -599,9 +603,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 	})
 
 	if (appendPresentationOnlyNodesToCalculationTree) {
-		reports = reports.map((report) =>
-			mergePresentationOnlyNodesIntoCalculation(report, presentationMergeOptions),
-		)
+		reports = reports.map((report) => mergePresentationOnlyNodesIntoCalculation(report, presentationMergeOptions))
 	}
 
 	if (pruneToHtmlTableKeys) {
@@ -1282,6 +1284,32 @@ interface InferredCloneFlags {
 	originalCalcKeys: Set<string>
 }
 
+function descendantKeys(node: TreeNode): Set<string> {
+	const keys = new Set<string>()
+	const walk = (n: TreeNode) => {
+		for (const child of n.children ?? []) {
+			keys.add(stripNamespace(child.key))
+			walk(child)
+		}
+	}
+	walk(node)
+	return keys
+}
+
+/**
+ * After presentation rollup inference, drop flat siblings whose keys now
+ * appear under another sibling — re-parent in place instead of duplicating.
+ */
+function dedupeReparentedSiblings(siblings: TreeNode[]): TreeNode[] {
+	if (siblings.length <= 1) return siblings
+	const reparented = new Set<string>()
+	for (const sibling of siblings) {
+		descendantKeys(sibling).forEach((key) => reparented.add(key))
+	}
+	if (reparented.size === 0) return siblings
+	return siblings.filter((s) => !reparented.has(stripNamespace(s.key)))
+}
+
 function cloneWithInferredPresentationChildren(
 	node: TreeNode,
 	contexts: Map<string, PresentationContext[]>,
@@ -1290,9 +1318,10 @@ function cloneWithInferredPresentationChildren(
 	fromInferredPresentation: boolean,
 ): TreeNode {
 	const norm = stripNamespace(node.key)
-	const children = (node.children ?? []).map((child) =>
+	let children = (node.children ?? []).map((child) =>
 		cloneWithInferredPresentationChildren(child, contexts, stack, inferFlags, fromInferredPresentation),
 	)
+	children = dedupeReparentedSiblings(children)
 	const existingChildKeys = new Set(children.map((child) => stripNamespace(child.key)))
 	const childStack = new Set(stack)
 	childStack.add(norm)
@@ -1302,7 +1331,7 @@ function cloneWithInferredPresentationChildren(
 
 	let out: TreeNode = {
 		...node,
-		children: children.concat(inferred),
+		children: dedupeReparentedSiblings(children.concat(inferred)),
 	}
 	if (
 		inferFlags?.options?.markEnrichedFromPresentation &&
@@ -1329,9 +1358,7 @@ function inferPresentationChildren(
 		// Skip duplicate presentation rows — if a prior sibling has the same
 		// key, this is a summary/subtotal repeat whose preceding siblings are
 		// unrelated to this node's children.
-		const hasPriorDuplicate = context.siblings
-			.slice(0, context.index)
-			.some((s) => stripNamespace(s.key) === norm)
+		const hasPriorDuplicate = context.siblings.slice(0, context.index).some((s) => stripNamespace(s.key) === norm)
 		if (hasPriorDuplicate) continue
 
 		const candidates = findRollupCandidateSiblings(context, targetValue)
@@ -1354,17 +1381,11 @@ function signedPresentationLineContribution(node: TreeNode): number {
 }
 
 function findRollupCandidateSiblings(context: PresentationContext, targetValue: number): TreeNode[] {
-	const priorNumericSiblings = context.siblings
-		.slice(0, context.index)
-		.filter((node) => numericValue(node) !== null)
+	const priorNumericSiblings = context.siblings.slice(0, context.index).filter((node) => numericValue(node) !== null)
 
 	// Pass 1: signed-label heuristic. Correct for income-statement subtotals
 	// where rows labelled "expense / cost / tax / …" are deductions.
-	const signed = scanTrailingRollupSlices(
-		priorNumericSiblings,
-		targetValue,
-		signedPresentationLineContribution,
-	)
+	const signed = scanTrailingRollupSlices(priorNumericSiblings, targetValue, signedPresentationLineContribution)
 	if (signed.length > 0) return signed
 
 	// Pass 2 (fallback): strict unsigned sum. Balance-sheet groupings (e.g.
