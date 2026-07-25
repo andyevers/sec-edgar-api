@@ -1093,14 +1093,16 @@ function reconciles(sum: number, target: number): boolean {
  */
 function findRollupRun(stack: TreeNode[], node: TreeNode): { start: number; contraLast: boolean } | null {
 	const target = numericValue(node)
-	if (target === null) return null
+	if (target === null || target === 0) return null
 	for (let start = 0; start <= stack.length - 1; start++) {
 		const run = stack.slice(start)
+		if (run.length < 2) continue
 		const sum = run.reduce((acc, n) => acc + (numericValue(n) ?? 0), 0)
 		if (reconciles(sum, target)) return { start, contraLast: false }
 	}
 	for (let start = 0; start <= stack.length - 2; start++) {
 		const run = stack.slice(start)
+		if (run.length < 2) continue
 		const last = numericValue(run[run.length - 1]!) ?? 0
 		const sum = run.slice(0, -1).reduce((acc, n) => acc + (numericValue(n) ?? 0), 0) - last
 		if (reconciles(sum, target)) return { start, contraLast: true }
@@ -1352,7 +1354,10 @@ function inferPresentationChildren(
 	if (stack.has(norm)) return []
 
 	const targetValue = numericValue(node)
-	if (targetValue === null) return []
+	// Zero is not a usable rollup target: many disclosure rows share a 0 fact
+	// (unused facilities, nil commercial-paper activity), and any pair of
+	// zeros "sums" to the target — nesting peer lines under each other.
+	if (targetValue === null || targetValue === 0) return []
 
 	for (const context of contexts.get(norm) ?? []) {
 		// Skip duplicate presentation rows — if a prior sibling has the same
@@ -1402,7 +1407,12 @@ function scanTrailingRollupSlices(
 ): TreeNode[] {
 	for (let start = priorNumericSiblings.length - 1; start >= 0; start--) {
 		const slice = priorNumericSiblings.slice(start)
-		if (slice.length === 0) continue
+		// A single prior sibling whose value equals the target is not a rollup —
+		// it is a coincident magnitude (e.g. commercial-paper proceeds and
+		// repayments both 500M on a cash-flow face). Requiring ≥2 components
+		// keeps genuine multi-line subtotals (AssetsCurrent, DebtCurrent, …)
+		// while refusing to nest peer face lines under each other.
+		if (slice.length < 2) continue
 		const sum = slice.reduce((total, node) => total + contribution(node), 0)
 		if (Math.abs(sum - targetValue) <= 1) return slice
 	}
