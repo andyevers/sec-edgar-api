@@ -1083,29 +1083,43 @@ function reconciles(sum: number, target: number): boolean {
 	return Math.abs(sum - target) <= Math.max(1, Math.abs(target) * ABSTRACT_TOTAL_RECONCILE_TOLERANCE)
 }
 
+type RollupRunMatch =
+	| { start: number; mode: 'additive' }
+	| { start: number; mode: 'contraLast' }
+	| { start: number; mode: 'signed' }
+
 /**
  * Find the trailing run of `stack` that rolls up to `node`'s value, either as a
- * plain additive sum (`Before = Σ components`) or as a net-of-contra subtotal
- * where the last item is subtracted (`After = Before − AccumulatedDepreciation`).
- * Returns the run's start index and whether the last item is a contra, scanning
- * longest-trailing-run first so a subtotal claims everything since the prior
- * boundary. `null` when nothing reconciles.
+ * plain additive sum (`Before = Σ components`), a net-of-contra subtotal where
+ * the last item is subtracted (`After = Before − AccumulatedDepreciation`), or
+ * a signed-label sum (expense / loss / impairment lines contribute negatively
+ * while stored magnitudes stay positive). Returns the run's start index and
+ * match mode, scanning longest-trailing-run first so a subtotal claims
+ * everything since the prior boundary. `null` when nothing reconciles.
  */
-function findRollupRun(stack: TreeNode[], node: TreeNode): { start: number; contraLast: boolean } | null {
+function findRollupRun(stack: TreeNode[], node: TreeNode): RollupRunMatch | null {
 	const target = numericValue(node)
 	if (target === null || target === 0) return null
 	for (let start = 0; start <= stack.length - 1; start++) {
 		const run = stack.slice(start)
 		if (run.length < 2) continue
 		const sum = run.reduce((acc, n) => acc + (numericValue(n) ?? 0), 0)
-		if (reconciles(sum, target)) return { start, contraLast: false }
+		if (reconciles(sum, target)) return { start, mode: 'additive' }
 	}
 	for (let start = 0; start <= stack.length - 2; start++) {
 		const run = stack.slice(start)
 		if (run.length < 2) continue
 		const last = numericValue(run[run.length - 1]!) ?? 0
 		const sum = run.slice(0, -1).reduce((acc, n) => acc + (numericValue(n) ?? 0), 0) - last
-		if (reconciles(sum, target)) return { start, contraLast: true }
+		if (reconciles(sum, target)) return { start, mode: 'contraLast' }
+	}
+	// Pass 3: signed-label contributions (QCOM-style impairment / loss lines
+	// stored as positive magnitudes under an income-statement total).
+	for (let start = 0; start <= stack.length - 1; start++) {
+		const run = stack.slice(start)
+		if (run.length < 2) continue
+		const sum = run.reduce((acc, n) => acc + signedPresentationLineContribution(n), 0)
+		if (reconciles(sum, target)) return { start, mode: 'signed' }
 	}
 	return null
 }
@@ -1114,7 +1128,8 @@ function findRollupRun(stack: TreeNode[], node: TreeNode): { start: number; cont
  * Reconstruct the nested subtotal hierarchy implied by a flat list of
  * presentation siblings. Scans left→right with a stack: when a node rolls up a
  * trailing run (see {@link findRollupRun}) those nodes become its children
- * (the contra item, if any, gets weight −1). E.g. the flat PPE block
+ * (the contra item, if any, gets weight −1; signed-label deductions also get
+ * weight −1). E.g. the flat PPE block
  * `[Electric, Gas, CIP, FinanceLease, Before, AccumDepreciation, After]`
  * becomes `After → { Before → {Electric, Gas, CIP, FinanceLease}, −AccumDepreciation }`.
  */
@@ -1124,9 +1139,12 @@ function buildSubtotalHierarchy(siblings: TreeNode[]): TreeNode[] {
 		const match = findRollupRun(stack, node)
 		if (match) {
 			const run = stack.splice(match.start)
-			const claimed = match.contraLast
-				? run.map((child, i) => (i === run.length - 1 ? { ...child, weight: -1 } : child))
-				: run
+			const claimed =
+				match.mode === 'contraLast'
+					? run.map((child, i) => (i === run.length - 1 ? { ...child, weight: -1 } : child))
+					: match.mode === 'signed'
+						? run.map(withSignedPresentationWeight)
+						: run
 			stack.push({ ...node, children: [...(node.children ?? []), ...claimed] })
 		} else {
 			stack.push(node)
@@ -1378,20 +1396,34 @@ function signedPresentationLineContribution(node: TreeNode): number {
 
 	const text = `${stripNamespace(node.key)} ${node.label ?? ''}`.toLowerCase()
 	const isDeduction =
-		/(expense|cost|tax|amortization|depreciation|depletion|selling|marketing|administrative|research|development|interest)/.test(
+		/(expense|cost|tax|amortization|depreciation|depletion|selling|marketing|administrative|research|development|interest|loss|impairment)/.test(
 			text,
 		) && !/(income|profit|revenue|sales|gain)/.test(text)
 
 	return isDeduction ? -Math.abs(value) : value
 }
 
+/**
+ * Stamp calculation weight ±1 from {@link signedPresentationLineContribution}
+ * so a parent whose children were matched via the signed rollup pass stays
+ * sum-coherent under strict weighted math (stored magnitudes stay positive).
+ */
+function withSignedPresentationWeight(node: TreeNode): TreeNode {
+	const raw = numericValue(node)
+	if (raw === null || raw === 0) return node
+	const signed = signedPresentationLineContribution(node)
+	const weight = Math.sign(signed) === Math.sign(raw) ? 1 : -1
+	return weight === (typeof node.weight === 'number' ? node.weight : 1) ? node : { ...node, weight }
+}
+
 function findRollupCandidateSiblings(context: PresentationContext, targetValue: number): TreeNode[] {
 	const priorNumericSiblings = context.siblings.slice(0, context.index).filter((node) => numericValue(node) !== null)
 
 	// Pass 1: signed-label heuristic. Correct for income-statement subtotals
-	// where rows labelled "expense / cost / tax / …" are deductions.
+	// where rows labelled "expense / cost / tax / loss / impairment / …" are
+	// deductions. Stamp ±1 weights so the resulting calc parent is coherent.
 	const signed = scanTrailingRollupSlices(priorNumericSiblings, targetValue, signedPresentationLineContribution)
-	if (signed.length > 0) return signed
+	if (signed.length > 0) return signed.map(withSignedPresentationWeight)
 
 	// Pass 2 (fallback): strict unsigned sum. Balance-sheet groupings (e.g.
 	// the current-assets block ending in `AssetsCurrent`) contain additive
