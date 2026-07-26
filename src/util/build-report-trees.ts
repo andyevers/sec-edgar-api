@@ -360,6 +360,13 @@ export interface BuildReportTreesParams {
 	 * forest — e.g. nesting an island that contains
 	 * `PropertyPlantAndEquipmentNet` while PPE is already a sibling node.
 	 *
+	 * Also runs {@link rebuildCalcForestsFromCrossReportParents} after
+	 * presentation merge: reconnect presentation-only islands using
+	 * parent→child calculation structure borrowed from other reports in the
+	 * same filing (e.g. NetIncome parenting pretax + tax on a disclosure role
+	 * while the income statement only has those as disconnected presentation
+	 * rows).
+	 *
 	 * @default false
 	 */
 	stitchCalcIslands?: boolean
@@ -621,8 +628,18 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		return seedCalcFromPresentationWhenEmpty(built)
 	})
 
+	// Capture native calculation parenting *before* presentation enrichment so
+	// we borrow real calc arcs (not presentation-inferred structure).
+	const crossReportParentPatterns = stitchCalcIslands
+		? collectCrossReportParentPatterns(reports)
+		: []
+
 	if (appendPresentationOnlyNodesToCalculationTree) {
 		reports = reports.map((report) => mergePresentationOnlyNodesIntoCalculation(report, presentationMergeOptions))
+	}
+
+	if (stitchCalcIslands && crossReportParentPatterns.length > 0) {
+		reports = rebuildCalcForestsFromCrossReportParents(reports, crossReportParentPatterns)
 	}
 
 	if (pruneToHtmlTableKeys) {
@@ -932,6 +949,249 @@ export function stitchCalcIslandsByValueRollup(roots: TreeNode[], scopeOverlapTo
 		current = next
 	}
 	return current
+}
+
+// ---------------------------------------------------------------------------
+// Cross-report calc parenting
+//
+// Presentation merge can leave statement concepts as disconnected "islands"
+// (e.g. NetIncomeLoss + IncomeTaxExpenseBenefit under an abstract, while the
+// pretax rollup is a separate calc root). Other roles in the same filing often
+// already define the missing calculation arcs (NetIncome → pretax + tax with
+// weight −1 on tax). Borrow those native parent→child patterns to rebuild the
+// target forest when values reconcile.
+// ---------------------------------------------------------------------------
+
+/** Relative tolerance for cross-report weighted-sum validation. */
+const CROSS_REPORT_PARENT_RECONCILE_TOLERANCE = 0.005
+
+export interface CrossReportParentPattern {
+	/** Namespace-stripped parent concept. */
+	parentKey: string
+	/** Namespace-stripped children with calculation weights from the donor. */
+	children: { key: string; weight: number }[]
+	/** Filing-summary role URI of the donor report (patterns are not applied back to it). */
+	sourceRole: string
+}
+
+/**
+ * Walk every report's calculation tree and collect parent nodes whose direct
+ * children already reconcile under signed calculation weights. Call on
+ * **pre-presentation-merge** forests so donors reflect native calc arcs.
+ */
+export function collectCrossReportParentPatterns(
+	reports: readonly XbrlFilingSummaryReportWithTrees[],
+): CrossReportParentPattern[] {
+	const patterns: CrossReportParentPattern[] = []
+	const seen = new Set<string>()
+
+	for (const report of reports) {
+		const role = report.role ?? ''
+		const visit = (node: TreeNode): void => {
+			const kids = node.children ?? []
+			if (kids.length >= 2 && childrenReconcileToParent(node, kids)) {
+				const parentKey = stripNamespace(node.key)
+				const children = kids.map((c) => ({
+					key: stripNamespace(c.key),
+					weight: typeof c.weight === 'number' ? c.weight : 1,
+				}))
+				const sig = `${role}|${parentKey}|${children.map((c) => `${c.key}:${c.weight}`).join(',')}`
+				if (!seen.has(sig)) {
+					seen.add(sig)
+					patterns.push({ parentKey, children, sourceRole: role })
+				}
+			}
+			for (const child of kids) visit(child)
+		}
+		for (const root of report.calculationTree ?? []) visit(root)
+	}
+
+	return patterns
+}
+
+/**
+ * For each report, adopt donor parent→child calculation structure when the
+ * parent and all children already exist on the target but are disconnected
+ * (presentation island and/or separate roots), and the weighted sum reconciles.
+ */
+export function rebuildCalcForestsFromCrossReportParents(
+	reports: XbrlFilingSummaryReportWithTrees[],
+	patterns: readonly CrossReportParentPattern[],
+): XbrlFilingSummaryReportWithTrees[] {
+	if (patterns.length === 0) return reports
+
+	return reports.map((report) => {
+		const role = report.role ?? ''
+		const applicable = patterns.filter((p) => p.sourceRole !== role)
+		if (applicable.length === 0) return report
+
+		let roots = report.calculationTree ?? []
+		if (roots.length === 0) return report
+
+		// Prefer patterns that absorb the most current forest roots (reconnect
+		// the largest islands first).
+		const ordered = [...applicable].sort((a, b) => {
+			const score = (p: CrossReportParentPattern) =>
+				p.children.filter((c) => roots.some((r) => stripNamespace(r.key) === c.key)).length
+			return score(b) - score(a) || b.children.length - a.children.length
+		})
+
+		const maxPasses = Math.max(1, ordered.length)
+		for (let pass = 0; pass < maxPasses; pass++) {
+			let applied = false
+			for (const pattern of ordered) {
+				const next = tryApplyCrossReportParentPattern(roots, pattern)
+				if (next) {
+					roots = next
+					applied = true
+					break
+				}
+			}
+			if (!applied) break
+		}
+
+		return roots === report.calculationTree ? report : { ...report, calculationTree: roots }
+	})
+}
+
+function tryApplyCrossReportParentPattern(
+	roots: TreeNode[],
+	pattern: CrossReportParentPattern,
+): TreeNode[] | null {
+	const forest = deepCloneNodes(roots)
+	const parent = findNodeByNormKey(forest, pattern.parentKey)
+	if (!parent) return null
+	if (isExcludedStitchRoot(parent)) return null
+
+	const existingChildKeys = new Set((parent.children ?? []).map((c) => stripNamespace(c.key)))
+	if (pattern.children.every((c) => existingChildKeys.has(c.key))) return null
+
+	const parentVal = numericValue(parent)
+	if (parentVal === null) return null
+
+	// Locate each child instance (prefer roots / nodes not already under parent).
+	const childRefs: { spec: { key: string; weight: number }; node: TreeNode }[] = []
+	for (const spec of pattern.children) {
+		const node = findBestCrossReportChildInstance(forest, spec.key, parent)
+		if (!node) return null
+		if (node === parent) return null
+		if (nodeContainsNormKey(node, pattern.parentKey)) return null // would cycle
+		const value = numericValue(node)
+		if (value === null) return null
+		if (isExcludedStitchRoot(node)) return null
+		childRefs.push({ spec, node })
+	}
+
+	let weightedSum = 0
+	for (const { spec, node } of childRefs) {
+		weightedSum += spec.weight * numericValue(node)!
+	}
+	const tol = Math.max(1, Math.abs(parentVal) * CROSS_REPORT_PARENT_RECONCILE_TOLERANCE)
+	if (Math.abs(weightedSum - parentVal) > tol) return null
+
+	// Only rebuild when the concepts are actually disconnected on the target:
+	// parent came from presentation enrichment, parent is still a leaf, or at
+	// least one missing donor-child is currently a separate forest root.
+	const missingChildren = pattern.children.filter((c) => !existingChildKeys.has(c.key))
+	const missingChildIsRoot = missingChildren.some((c) =>
+		forest.some((r) => stripNamespace(r.key) === c.key),
+	)
+	const parentIsIslandLeaf =
+		parent.enrichedFromPresentation === true || (parent.children?.length ?? 0) === 0
+	if (!missingChildIsRoot && !parentIsIslandLeaf) return null
+
+	// Detach children from their current locations, then attach under parent
+	// with donor weights (preserving each child's existing subtree).
+	const attached: TreeNode[] = []
+	for (const { spec } of childRefs) {
+		const detached = detachNodeByNormKey(forest, spec.key)
+		if (!detached) return null
+		attached.push({ ...detached, weight: spec.weight })
+	}
+
+	// Parent may have been a root that we must not lose when splicing children.
+	const kept = (parent.children ?? []).filter((c) => !pattern.children.some((pc) => pc.key === stripNamespace(c.key)))
+	parent.children = [...kept, ...attached]
+
+	return forest
+}
+
+function findNodeByNormKey(roots: TreeNode[], normKey: string): TreeNode | null {
+	for (const root of roots) {
+		const found = findNodeInTreeByNormKey(root, normKey)
+		if (found) return found
+	}
+	return null
+}
+
+function findNodeInTreeByNormKey(node: TreeNode, normKey: string): TreeNode | null {
+	if (stripNamespace(node.key) === normKey) return node
+	for (const child of node.children ?? []) {
+		const found = findNodeInTreeByNormKey(child, normKey)
+		if (found) return found
+	}
+	return null
+}
+
+function nodeContainsNormKey(node: TreeNode, normKey: string): boolean {
+	for (const child of node.children ?? []) {
+		if (stripNamespace(child.key) === normKey) return true
+		if (nodeContainsNormKey(child, normKey)) return true
+	}
+	return false
+}
+
+/**
+ * Prefer a forest-root instance, then any instance not already under `parent`,
+ * then the first match. Avoids grabbing a nested duplicate when the island
+ * root is the one we need to move.
+ */
+function findBestCrossReportChildInstance(
+	roots: TreeNode[],
+	normKey: string,
+	parent: TreeNode,
+): TreeNode | null {
+	const rootHit = roots.find((r) => stripNamespace(r.key) === normKey)
+	if (rootHit) return rootHit
+
+	const underParent = findNodeInTreeByNormKey(parent, normKey)
+	const all: TreeNode[] = []
+	const collect = (node: TreeNode): void => {
+		if (stripNamespace(node.key) === normKey) all.push(node)
+		for (const child of node.children ?? []) collect(child)
+	}
+	for (const root of roots) collect(root)
+	const outsideParent = all.find((n) => n !== underParent && n !== parent)
+	return outsideParent ?? underParent ?? all[0] ?? null
+}
+
+function detachNodeByNormKey(roots: TreeNode[], normKey: string): TreeNode | null {
+	const rootIdx = roots.findIndex((r) => stripNamespace(r.key) === normKey)
+	if (rootIdx >= 0) {
+		const [node] = roots.splice(rootIdx, 1)
+		return node ?? null
+	}
+	for (const root of roots) {
+		const found = detachChildByNormKey(root, normKey)
+		if (found) return found
+	}
+	return null
+}
+
+function detachChildByNormKey(node: TreeNode, normKey: string): TreeNode | null {
+	const kids = node.children
+	if (!kids?.length) return null
+	const idx = kids.findIndex((c) => stripNamespace(c.key) === normKey)
+	if (idx >= 0) {
+		const [child] = kids.splice(idx, 1)
+		if (kids.length === 0) delete node.children
+		return child ?? null
+	}
+	for (const child of kids) {
+		const found = detachChildByNormKey(child, normKey)
+		if (found) return found
+	}
+	return null
 }
 
 // ---------------------------------------------------------------------------
