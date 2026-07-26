@@ -350,8 +350,15 @@ export interface BuildReportTreesParams {
 	 *
 	 * Many filers define calculation arcs in isolated groups rather than a
 	 * single connected tree. When enabled, a leaf whose value equals the
-	 * signed sum of orphan roots is expanded to parent those orphans,
-	 * producing a deeper connected tree.
+	 * **additive** sum of two or more orphan roots is expanded to parent those
+	 * orphans, producing a deeper connected tree. Signed (±) subset matching
+	 * is intentionally not used — it false-stitches unrelated BS islands
+	 * (BSX: liabilities/PPE under RestrictedCash).
+	 *
+	 * A stitch is also rejected when any concept in the orphan subtrees
+	 * (including nested prior stitches) already exists elsewhere in the
+	 * forest — e.g. nesting an island that contains
+	 * `PropertyPlantAndEquipmentNet` while PPE is already a sibling node.
 	 *
 	 * @default false
 	 */
@@ -359,19 +366,25 @@ export interface BuildReportTreesParams {
 
 	/**
 	 * When stitching calc islands ({@link stitchCalcIslands}), scope the
-	 * duplicate / circular-reference guard to the **target root's subtree**
-	 * (the tree the orphans are attached into) rather than the entire forest.
+	 * **in-target** duplicate / circular-reference guard to the target root's
+	 * subtree (the tree the orphans are attached into) rather than the entire
+	 * forest.
 	 *
 	 * The orphan roots a stitch attaches are, by construction, themselves
-	 * top-level roots in the forest, so a forest-wide guard finds every
-	 * orphan's own key already "present" and rejects the stitch — leaving the
-	 * tree unstitched. Example: Visa's income statement leaves
+	 * top-level roots in the forest, so a forest-wide in-target guard finds
+	 * every orphan's own key already "present" and rejects the stitch —
+	 * leaving the tree unstitched. Example: Visa's income statement leaves
 	 * `IncomeLossFromContinuingOperationsBeforeIncomeTaxes…` as a childless
 	 * calc leaf whose value (6,042M) equals
 	 * `OperatingIncomeLoss` (5,954M) + `NonoperatingIncomeExpense` (88M); a
-	 * forest-wide guard keeps those two as siblings instead of nesting them
-	 * under pretax. Scoping the guard to the target tree restores attachment
-	 * while still preventing genuine duplicates / cycles inside that tree.
+	 * forest-wide in-target guard keeps those two as siblings instead of
+	 * nesting them under pretax. Scoping that guard to the target tree
+	 * restores attachment while still preventing genuine duplicates / cycles
+	 * inside that tree.
+	 *
+	 * Separately, a **forest-wide descendant** check always rejects stitches
+	 * whose orphan subtrees reintroduce a concept already present outside
+	 * those orphans (see {@link stitchCalcIslands}).
 	 *
 	 * @default true
 	 */
@@ -706,14 +719,22 @@ function popcount(x: number): number {
 }
 
 /**
- * Find a subset of `candidates` whose values sum to `target` within
- * tolerance, trying both +/- signs for each candidate (disconnected orphan
- * roots have no parent arc to indicate add vs subtract).
+ * Find a subset of `candidates` whose values sum to `target` (exact).
  *
- * Complexity is O(3^n) — for each candidate we try: excluded, +value,
- * −value.  With n ≤ 10 that's ≤ 59 049 iterations.
+ * Only **additive** (all-positive) combinations are considered. An earlier
+ * version also tried every ± sign pattern (O(3^n)), which produced false
+ * stitches on multi-island balance-sheet disclosures — e.g. BSX supplemental
+ * BS details attached `OtherLiabilitiesCurrent` / PPE under
+ * `RestrictedCash…` because −787 + 1918 + 1482 − 2478 = 135. Legitimate
+ * island rollups (Visa pretax = operating + nonoperating) are unsigned sums.
+ *
+ * Complexity is O(2^n); n ≤ 10 → ≤ 1024 iterations.
  */
-function findSubsetSummingTo(candidates: TreeNode[], target: number): TreeNode[] | null {
+function findSubsetSummingTo(
+	candidates: TreeNode[],
+	target: number,
+	isAcceptable?: (subset: TreeNode[]) => boolean,
+): TreeNode[] | null {
 	const n = candidates.length
 	if (n > 10) return null
 
@@ -728,29 +749,22 @@ function findSubsetSummingTo(candidates: TreeNode[], target: number): TreeNode[]
 		if (popcount(mask) < 2) continue
 
 		const indices: number[] = []
+		let sum = 0
 		let allValid = true
 		for (let i = 0; i < n; i++) {
-			if (mask & (1 << i)) {
-				if (isNaN(values[i]!)) {
-					allValid = false
-					break
-				}
-				indices.push(i)
+			if (!(mask & (1 << i))) continue
+			if (isNaN(values[i]!)) {
+				allValid = false
+				break
 			}
+			indices.push(i)
+			sum += values[i]!
 		}
 		if (!allValid) continue
-
-		const k = indices.length
-		const signCombos = 1 << k
-		for (let s = 0; s < signCombos; s++) {
-			let sum = 0
-			for (let j = 0; j < k; j++) {
-				sum += s & (1 << j) ? -values[indices[j]!]! : values[indices[j]!]!
-			}
-			if (sum === target) {
-				return indices.map((i) => candidates[i]!)
-			}
-		}
+		if (sum !== target) continue
+		const subset = indices.map((i) => candidates[i]!)
+		if (isAcceptable && !isAcceptable(subset)) continue
+		return subset
 	}
 	return null
 }
@@ -766,12 +780,63 @@ function orphansAlreadyRepresented(orphans: TreeNode[], nonLeafValues: Set<numbe
 	})
 }
 
+/** Count namespace-stripped concept keys across a forest (duplicates included). */
+function countKeysInForest(roots: readonly TreeNode[]): Map<string, number> {
+	const counts = new Map<string, number>()
+	function walk(node: TreeNode): void {
+		const k = stripNamespace(node.key)
+		counts.set(k, (counts.get(k) ?? 0) + 1)
+		for (const child of node.children ?? []) walk(child)
+	}
+	for (const root of roots) walk(root)
+	return counts
+}
+
+/**
+ * True when attaching `orphans` under another node would copy a concept that
+ * already exists elsewhere in the forest (outside the orphan subtrees being
+ * moved). Moving a root into a leaf is fine; nesting an island that *contains*
+ * e.g. `PropertyPlantAndEquipmentNet` while PPE is already a sibling root is not.
+ */
+function orphansConflictWithExistingForestKeys(
+	orphans: readonly TreeNode[],
+	forestCounts: Map<string, number>,
+): boolean {
+	const movedCounts = new Map<string, number>()
+	function walk(node: TreeNode): void {
+		const k = stripNamespace(node.key)
+		movedCounts.set(k, (movedCounts.get(k) ?? 0) + 1)
+		for (const child of node.children ?? []) walk(child)
+	}
+	for (const orphan of orphans) walk(orphan)
+
+	for (const [k, moved] of movedCounts) {
+		const forest = forestCounts.get(k) ?? 0
+		if (forest - moved > 0) return true
+	}
+	return false
+}
+
+/** True when any key in `orphan` already appears in `targetKeys` (cycle / in-target dup). */
+function orphanOverlapsKeySet(orphan: TreeNode, targetKeys: ReadonlySet<string>): boolean {
+	const orphanKeys = new Set<string>()
+	collectAllKeys(orphan, orphanKeys)
+	for (const ok of orphanKeys) {
+		if (targetKeys.has(ok)) return true
+	}
+	return false
+}
+
 interface ValueRollupStitch {
 	leafKey: string
 	orphans: TreeNode[]
 }
 
-function findBestValueRollupStitch(roots: TreeNode[], candidateOrphans: TreeNode[]): ValueRollupStitch | null {
+function findBestValueRollupStitch(
+	roots: TreeNode[],
+	candidateOrphans: TreeNode[],
+	isAcceptable: (stitch: ValueRollupStitch) => boolean,
+): ValueRollupStitch | null {
 	for (const root of roots) {
 		const leaves = collectLeaves(root)
 		const nonLeafValues = collectNonLeafValues(root)
@@ -785,69 +850,88 @@ function findBestValueRollupStitch(roots: TreeNode[], candidateOrphans: TreeNode
 			)
 			if (orphansForThisRoot.length < 2) continue
 
-			const match = findSubsetSummingTo(orphansForThisRoot, leafVal)
-			if (match && match.length >= 2) {
-				if (orphansAlreadyRepresented(match, nonLeafValues)) continue
-				return { leafKey: leaf.key, orphans: match }
-			}
+			const match = findSubsetSummingTo(orphansForThisRoot, leafVal, (subset) => {
+				if (subset.length < 2) return false
+				if (orphansAlreadyRepresented(subset, nonLeafValues)) return false
+				return isAcceptable({ leafKey: leaf.key, orphans: subset })
+			})
+			if (match) return { leafKey: leaf.key, orphans: match }
 		}
 	}
 	return null
 }
 
-function stitchCalcIslandsByValueRollup(roots: TreeNode[], scopeOverlapToTargetTree = true): TreeNode[] {
-	if (roots.length < 3) return roots
+/**
+ * Apply at most one additive value-rollup stitch. Returns the new forest, or
+ * `null` when no acceptable stitch exists.
+ */
+function tryOneValueRollupStitch(
+	roots: TreeNode[],
+	scopeOverlapToTargetTree: boolean,
+): TreeNode[] | null {
+	if (roots.length < 3) return null
 
 	const candidateOrphans = roots.filter((r) => {
 		if (isExcludedStitchRoot(r)) return false
 		if (numericValue(r) === null && !r.children?.length) return false
 		return true
 	})
-	if (candidateOrphans.length < 2) return roots
+	if (candidateOrphans.length < 2) return null
 
-	const best = findBestValueRollupStitch(roots, candidateOrphans)
-	if (!best) return roots
+	const forestCounts = countKeysInForest(roots)
 
 	function cloneNode(n: TreeNode): TreeNode {
 		return { ...n, children: n.children ? n.children.map(cloneNode) : undefined }
 	}
 
+	const best = findBestValueRollupStitch(roots, candidateOrphans, (stitch) => {
+		// Forest-wide: no concept in the orphan subtrees may already exist
+		// outside those orphans (would duplicate after attach).
+		if (orphansConflictWithExistingForestKeys(stitch.orphans, forestCounts)) return false
+
+		const clonedRoots = roots.map(cloneNode)
+		const targetRoot = scopeOverlapToTargetTree
+			? clonedRoots.find((r) => findLeafByKey(r, stitch.leafKey) !== null)
+			: null
+		const targetKeys = new Set<string>()
+		if (targetRoot) {
+			collectAllKeys(targetRoot, targetKeys)
+		} else {
+			for (const root of clonedRoots) collectAllKeys(root, targetKeys)
+		}
+		for (const orphan of stitch.orphans) {
+			if (orphanOverlapsKeySet(orphan, targetKeys)) return false
+		}
+		return true
+	})
+	if (!best) return null
+
 	const clonedRoots = roots.map(cloneNode)
 	const targetLeaf = findLeafByKeyInRoots(clonedRoots, best.leafKey)
-	if (!targetLeaf) return roots
+	if (!targetLeaf) return null
 
-	// Collect the keys to guard against duplicates / circular references after
-	// stitching. Scope to the *target root's subtree* (the tree the orphans
-	// are attached into): the orphans are themselves top-level roots, so a
-	// forest-wide scope would find every orphan's own key already present and
-	// reject the stitch. Falling back to the forest-wide scope keeps the prior
-	// (overly conservative) behaviour available when explicitly requested.
-	const targetKeys = new Set<string>()
-	const targetRoot = scopeOverlapToTargetTree
-		? clonedRoots.find((r) => findLeafByKey(r, best.leafKey) !== null)
-		: null
-	if (targetRoot) {
-		collectAllKeys(targetRoot, targetKeys)
-	} else {
-		for (const root of clonedRoots) collectAllKeys(root, targetKeys)
-	}
-
-	const safeOrphans: TreeNode[] = []
-	for (const orphan of best.orphans) {
-		const orphanKeys = new Set<string>()
-		collectAllKeys(orphan, orphanKeys)
-		let overlap = false
-		orphanKeys.forEach((ok) => {
-			if (targetKeys.has(ok)) overlap = true
-		})
-		if (!overlap) safeOrphans.push(cloneNode(orphan))
-	}
-	if (safeOrphans.length === 0) return roots
-
+	const safeOrphans = best.orphans.map(cloneNode)
 	targetLeaf.children = [...(targetLeaf.children ?? []), ...safeOrphans]
 
 	const attachedNorms = new Set(safeOrphans.map((n) => stripNamespace(n.key)))
 	return clonedRoots.filter((r) => !attachedNorms.has(stripNamespace(r.key)))
+}
+
+export function stitchCalcIslandsByValueRollup(roots: TreeNode[], scopeOverlapToTargetTree = true): TreeNode[] {
+	if (roots.length < 3) return roots
+
+	// Apply stitches until none remain. Each pass may expose a new leaf that
+	// another island subset sums to; after every attach we re-check forest-wide
+	// duplicate keys so nested stitch descendants cannot reintroduce a concept
+	// already present elsewhere in the tree.
+	let current = roots
+	const maxPasses = Math.max(1, roots.length)
+	for (let pass = 0; pass < maxPasses; pass++) {
+		const next = tryOneValueRollupStitch(current, scopeOverlapToTargetTree)
+		if (!next) return current
+		current = next
+	}
+	return current
 }
 
 // ---------------------------------------------------------------------------
