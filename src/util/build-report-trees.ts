@@ -1330,16 +1330,57 @@ function dedupeReparentedSiblings(siblings: TreeNode[]): TreeNode[] {
 	return siblings.filter((s) => !reparented.has(stripNamespace(s.key)))
 }
 
+/**
+ * True when the parent's numeric value equals the signed weighted sum of its
+ * direct children (calculation-linkbase math). Used to protect already-correct
+ * calc groupings from presentation rollup inference that coincidentally nests
+ * peer lines under each other (e.g. Receivables + Inventories ≈ OtherCurrentAssets).
+ */
+function childrenReconcileToParent(parent: TreeNode, children: TreeNode[]): boolean {
+	const target = numericValue(parent)
+	if (target === null || children.length === 0) return false
+	let sum = 0
+	for (const child of children) {
+		const value = numericValue(child)
+		if (value === null) return false
+		sum += (typeof child.weight === 'number' ? child.weight : 1) * value
+	}
+	return Math.abs(sum - target) <= 1
+}
+
 function cloneWithInferredPresentationChildren(
 	node: TreeNode,
 	contexts: Map<string, PresentationContext[]>,
 	stack: Set<string>,
 	inferFlags: InferredCloneFlags | undefined,
 	fromInferredPresentation: boolean,
+	/**
+	 * Calc-sibling keys under a parent whose children already reconcile.
+	 * Presentation rollup must not claim these — they are peer face lines, not
+	 * components of another sibling (coincident sums are common on cash flow).
+	 */
+	protectedCalcSiblingKeys?: Set<string>,
 ): TreeNode {
 	const norm = stripNamespace(node.key)
-	let children = (node.children ?? []).map((child) =>
-		cloneWithInferredPresentationChildren(child, contexts, stack, inferFlags, fromInferredPresentation),
+	const originalChildren = node.children ?? []
+	const siblingKeys = new Set(originalChildren.map((child) => stripNamespace(child.key)))
+	// Only protect when this calc parent already sums correctly. Null-valued
+	// containers (disclosure `…LineItems`) stay eligible for sibling reparenting
+	// (DebtCurrent claiming its components). Reconciling statement parents
+	// (IncreaseDecreaseInOperatingCapital) must keep their flat calc children.
+	const protectForChildren = childrenReconcileToParent(node, originalChildren)
+		? siblingKeys
+		: protectedCalcSiblingKeys
+
+	let children = originalChildren.map((child) =>
+		cloneWithInferredPresentationChildren(
+			child,
+			contexts,
+			stack,
+			inferFlags,
+			fromInferredPresentation,
+			protectForChildren,
+		),
 	)
 	children = dedupeReparentedSiblings(children)
 	const existingChildKeys = new Set(children.map((child) => stripNamespace(child.key)))
@@ -1347,7 +1388,17 @@ function cloneWithInferredPresentationChildren(
 	childStack.add(norm)
 	const inferred = inferPresentationChildren(node, contexts, stack)
 		.filter((child) => !existingChildKeys.has(stripNamespace(child.key)))
-		.map((child) => cloneWithInferredPresentationChildren(child, contexts, childStack, inferFlags, true))
+		.filter((child) => !protectedCalcSiblingKeys?.has(stripNamespace(child.key)))
+		.map((child) =>
+			cloneWithInferredPresentationChildren(
+				child,
+				contexts,
+				childStack,
+				inferFlags,
+				true,
+				protectForChildren,
+			),
+		)
 
 	let out: TreeNode = {
 		...node,
