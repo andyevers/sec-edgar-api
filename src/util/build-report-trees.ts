@@ -177,7 +177,11 @@ function buildTemplateHierarchyFlat(params: {
 		}
 
 		if (!itemsById.has(arc.from)) {
-			const periodFactsFrom = getPeriodFacts({ conceptKey: keyFrom, factsByConcept, isPeriodStart })
+			// Parent side of the arc is never a period-start row — preferredLabel
+			// on the arc describes the *child* (`to`). Always resolve the parent
+			// against the current period so a periodStart child cannot pull
+			// prior-period facts onto its parent.
+			const periodFactsFrom = getPeriodFacts({ conceptKey: keyFrom, factsByConcept, isPeriodStart: false })
 			const membersFrom = extractMemberFacts(periodFactsFrom, memberInclusionRule, allowedMembers)
 			const primaryFactFrom = extractPrimaryFact(periodFactsFrom)
 
@@ -192,9 +196,8 @@ function buildTemplateHierarchyFlat(params: {
 					getBestLabel({
 						href: hrefFrom,
 						labelByHref,
-						preferredLabel: rowLabelType === 'preferredLabel' ? arc.preferredLabel : undefined,
 					}) ?? keyFrom,
-				isPeriodStart,
+				isPeriodStart: false,
 				period: primaryFactFrom?.period || 0,
 				value: resolveConceptTreeValue({
 					primary: primaryFactFrom,
@@ -333,9 +336,12 @@ export interface BuildReportTreesParams {
 	rowLabelType?: RowLabelType
 
 	/**
-	 * Disable inclusion of period start facts in the tree.
+	 * Disable inclusion of period-start rows (arcs whose preferredLabel is
+	 * `periodStartLabel`). Those rows intentionally resolve to the **prior**
+	 * period's ending balance as an opening balance; leaving them in mixes
+	 * prior-period values into an otherwise current-period tree.
 	 *
-	 * @default false
+	 * @default true
 	 */
 	disablePeriodStartFacts?: boolean
 
@@ -556,7 +562,7 @@ export function buildReportTrees(params: BuildReportTreesParams): XbrlFilingSumm
 		xbrlJson,
 		memberInclusionRule = 'inReportsWherePresent',
 		rowLabelType = 'preferredLabel',
-		disablePeriodStartFacts = false,
+		disablePeriodStartFacts = true,
 		stitchCalcIslands = false,
 		stitchCalcIslandsScopeOverlapToTargetTree = true,
 		appendPresentationOnlyNodesToCalculationTree = false,
