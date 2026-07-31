@@ -678,10 +678,34 @@ function numericValue(node: TreeNode): number | null {
 	return null
 }
 
-const STITCH_EXCLUDED_UNITS = new Set(['shares', 'usdPerShare'])
+/**
+ * Non-monetary units that must not participate in dollar value-rollups
+ * (calc-island stitch or presentation sibling-sum inference). Ratio facts
+ * (pure / number / percent) are often face-adjacent to monetary lines — e.g.
+ * SHW SG&A $ and SG&A-as-%-of-sales — and their fractional values sit inside
+ * the ±1 rollup tolerance, so they otherwise get nested under pretax/etc.
+ */
+function normalizeTreeUnit(unit: string): string {
+	return unit.trim().toLowerCase()
+}
+
+function isShareOrPerShareUnit(unit: string): boolean {
+	const u = normalizeTreeUnit(unit)
+	return u === 'shares' || u === 'usdpershare'
+}
+
+/** XBRL pure / percentItemType ratios (often surfaced as unit "number"). */
+function isRatioUnit(unit: string): boolean {
+	const u = normalizeTreeUnit(unit)
+	return u === 'pure' || u === 'number' || u === 'percent' || u.includes('percent')
+}
+
+function isExcludedFromMonetaryRollup(unit: string): boolean {
+	return isShareOrPerShareUnit(unit) || isRatioUnit(unit)
+}
 
 function isExcludedStitchRoot(node: TreeNode): boolean {
-	return STITCH_EXCLUDED_UNITS.has(node.unit)
+	return isExcludedFromMonetaryRollup(node.unit)
 }
 
 function collectAllKeys(node: TreeNode, out: Set<string>): void {
@@ -1818,7 +1842,11 @@ function withSignedPresentationWeight(node: TreeNode): TreeNode {
 }
 
 function findRollupCandidateSiblings(context: PresentationContext, targetValue: number): TreeNode[] {
-	const priorNumericSiblings = context.siblings.slice(0, context.index).filter((node) => numericValue(node) !== null)
+	// Skip shares / EPS / ratio rows — their magnitudes are not comparable to
+	// monetary subtotals, and ratio values (0.x) fit inside the ±1 tolerance.
+	const priorNumericSiblings = context.siblings
+		.slice(0, context.index)
+		.filter((node) => numericValue(node) !== null && !isExcludedFromMonetaryRollup(node.unit))
 
 	// Pass 1: signed-label heuristic. Correct for income-statement subtotals
 	// where rows labelled "expense / cost / tax / loss / impairment / …" are
@@ -1876,6 +1904,9 @@ function prunePresentationOnly(
 
 	if (existsInCalculation && children.length === 0) return null
 	if (children.length === 0) {
+		// Ratios (pure/number/percent) are presentation chrome on face statements
+		// — do not append them as calculation-tree roots. Keep shares / EPS.
+		if (isRatioUnit(node.unit)) return null
 		if (rz && !presentationLeafPassesNonZeroFilter(node, true)) return null
 		let leaf: TreeNode = { ...node, children: undefined }
 		if (mark && !originalCalcKeys.has(norm)) {
