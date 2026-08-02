@@ -1245,12 +1245,9 @@ export interface MergePresentationIntoCalculationOptions {
 	 */
 	markEnrichedFromPresentation?: boolean
 	/**
-	 * When true, skip the sibling-sum rollup inference that re-roots
-	 * presentation detail lines under existing *calculation* subtotals
-	 * ({@link inferPresentationChildren}). Only the presentation-only roots
-	 * are appended. Use for statements (e.g. cash flow) whose calculation
-	 * backbone is already complete for the sections it covers — inferring
-	 * extra rollups there reshapes the operating/financing branches.
+	 * When true, skip presentation-linkbase renesting heuristics
+	 * ({@link renestPresentationHierarchy}) and only append pruned
+	 * presentation-only roots onto the untouched calculation backbone.
 	 */
 	appendRootsOnly?: boolean
 	/**
@@ -1277,10 +1274,14 @@ export interface MergePresentationIntoCalculationOptions {
 }
 
 /**
- * Preserve calculation as the backbone while making presentation-only rows
- * visible to downstream consumers. The presentation branch is pruned to
- * concepts absent from calculation, with abstract/container ancestors retained
- * only as needed to keep sibling context.
+ * Preserve the calculation linkbase as an immutable backbone and enrich it with
+ * presentation-only structure.
+ *
+ * Calculation nesting is never rewritten — the calc linkbase already spells out
+ * parent/child relationships. Heuristic renesting runs only on a clone of the
+ * presentation tree, and only when a presentation parent's current children do
+ * **not** already reconcile to its value. Presentation-only subtrees are then
+ * grafted under matching calc nodes (or appended as roots).
  *
  * Optional `requireNonZeroPresentationLeaves` (for UI): include only
  * presentation-only leaves that carry a non‑zero numeric fact — reduces noise
@@ -1295,31 +1296,28 @@ export function mergePresentationOnlyNodesIntoCalculation(
 	if (calculationTree.length === 0 || presentationTree.length === 0) return report
 
 	const originalCalcKeys = new Set(flattenTreeNodes(calculationTree).map((n) => stripNamespace(n.key)))
-	const inferFlags: InferredCloneFlags = {
-		options: options?.markEnrichedFromPresentation === true ? options : undefined,
-		originalCalcKeys,
+	// Calculation backbone stays exactly as the linkbase defined it.
+	const calcBackbone = deepCloneNodes(calculationTree)
+
+	// Heuristics apply only to presentation. Renest flat sibling runs into
+	// subtotals when the current parent does not already reconcile.
+	let presentationWorking = deepCloneNodes(presentationTree)
+	if (!options?.appendRootsOnly) {
+		presentationWorking = presentationWorking.map(renestPresentationHierarchy)
+	}
+	// Re-root grand-total leaves under their abstract grouping *before*
+	// grafting: the reconciliation needs each component subtotal's value.
+	if (options?.rerootValidatedAbstractTotals) {
+		presentationWorking = presentationWorking.map(rerootValidatedAbstractTotals)
 	}
 
-	const presentationContexts = buildPresentationContexts(presentationTree)
-	const calculationWithInferredRollups = options?.appendRootsOnly
-		? deepCloneNodes(calculationTree)
-		: calculationTree.map((node) =>
-				cloneWithInferredPresentationChildren(node, presentationContexts, new Set(), inferFlags, false),
-		  )
-	const calcKeys = new Set(flattenTreeNodes(calculationWithInferredRollups).map((node) => stripNamespace(node.key)))
-	// Re-root grand-total leaves under their abstract grouping *before*
-	// pruning: the reconciliation needs each component subtotal's value, and
-	// pruning removes calc-native subtotals (e.g. AssetsCurrent) that would
-	// otherwise make the sum check fail.
-	const restructuredPresentationTree = options?.rerootValidatedAbstractTotals
-		? presentationTree.map(rerootValidatedAbstractTotals)
-		: presentationTree
-	const presentationOnlyRoots = restructuredPresentationTree
+	const calcKeys = new Set(flattenTreeNodes(calcBackbone).map((node) => stripNamespace(node.key)))
+	const presentationOnlyRoots = presentationWorking
 		.map((node) => prunePresentationOnly(node, calcKeys, options, originalCalcKeys))
 		.filter((node): node is TreeNode => node !== null)
 		.map((node) => (options?.resolveAbstractTwinSubtotals ? resolveAbstractTwinSubtotals(node) : node))
 
-	const merged = calculationWithInferredRollups.concat(presentationOnlyRoots)
+	const merged = graftPresentationOnlyOntoCalculation(calcBackbone, presentationOnlyRoots, originalCalcKeys, options)
 	// Complete the re-root: resolve the abstract groupings a re-rooted total
 	// (e.g. `Assets`) parents into concrete subtotals — collapse those with a
 	// surviving trailing subtotal (`PropertyPlantAndEquipmentNetAbstract` →
@@ -1332,6 +1330,81 @@ export function mergePresentationOnlyNodesIntoCalculation(
 		...report,
 		calculationTree: finalTree,
 	}
+}
+
+/**
+ * Rebuild presentation hierarchy from flat sibling runs via
+ * {@link buildSubtotalHierarchy}, but only when the node's current children do
+ * **not** already reconcile to its value. Already-correct presentation parents
+ * are left alone; calc nesting is never touched here.
+ */
+function renestPresentationHierarchy(node: TreeNode): TreeNode {
+	const children = (node.children ?? []).map(renestPresentationHierarchy)
+	if (children.length === 0) {
+		return { ...node, children: undefined }
+	}
+	if (childrenReconcileToParent(node, children)) {
+		return { ...node, children }
+	}
+	const grouped = buildSubtotalHierarchy(children)
+	return { ...node, children: grouped.length ? grouped : undefined }
+}
+
+/**
+ * Fold presentation-only shells into the calc backbone: when a presentation-only
+ * root (or intermediate) shares a key with a calc node, graft its presentation-
+ * only children under that calc node instead of appending a duplicate shell.
+ * Concepts already present in the original calculation linkbase are never moved.
+ */
+function graftPresentationOnlyOntoCalculation(
+	calcRoots: TreeNode[],
+	presentationOnlyRoots: TreeNode[],
+	originalCalcKeys: Set<string>,
+	options?: MergePresentationIntoCalculationOptions,
+): TreeNode[] {
+	const calcByKey = new Map<string, TreeNode>()
+	const index = (nodes: TreeNode[]) => {
+		for (const n of nodes) {
+			const norm = stripNamespace(n.key)
+			if (!calcByKey.has(norm)) calcByKey.set(norm, n)
+			if (n.children) index(n.children)
+		}
+	}
+	index(calcRoots)
+
+	const mark = options?.markEnrichedFromPresentation === true
+
+	const absorb = (presNode: TreeNode): TreeNode | null => {
+		const absorbedKids = (presNode.children ?? [])
+			.map(absorb)
+			.filter((n): n is TreeNode => n !== null)
+		const norm = stripNamespace(presNode.key)
+
+		if (originalCalcKeys.has(norm)) {
+			const calcNode = calcByKey.get(norm)
+			if (calcNode && absorbedKids.length > 0) {
+				const existing = new Set((calcNode.children ?? []).map((c) => stripNamespace(c.key)))
+				const toAdd = absorbedKids.filter((k) => !existing.has(stripNamespace(k.key)))
+				if (toAdd.length > 0) {
+					calcNode.children = dedupeReparentedSiblings([...(calcNode.children ?? []), ...toAdd])
+				}
+			}
+			// Calc-native shell — never append a duplicate.
+			return null
+		}
+
+		let out: TreeNode = {
+			...presNode,
+			children: absorbedKids.length ? absorbedKids : undefined,
+		}
+		if (mark && !originalCalcKeys.has(norm)) {
+			out = { ...out, enrichedFromPresentation: true }
+		}
+		return out
+	}
+
+	const remaining = presentationOnlyRoots.map(absorb).filter((n): n is TreeNode => n !== null)
+	return calcRoots.concat(remaining)
 }
 
 function flattenTreeNodes(tree: TreeNode[]): TreeNode[] {
@@ -1650,34 +1723,6 @@ function resolveAbstractTwinSubtotals(node: TreeNode): TreeNode {
 	return { ...node, children: node.children ? children : undefined }
 }
 
-interface PresentationContext {
-	node: TreeNode
-	siblings: TreeNode[]
-	index: number
-}
-
-function buildPresentationContexts(roots: TreeNode[]): Map<string, PresentationContext[]> {
-	const contexts = new Map<string, PresentationContext[]>()
-
-	function walk(nodes: TreeNode[]): void {
-		nodes.forEach((node, index) => {
-			const norm = stripNamespace(node.key)
-			const list = contexts.get(norm) ?? []
-			list.push({ node, siblings: nodes, index })
-			contexts.set(norm, list)
-			if (node.children) walk(node.children)
-		})
-	}
-
-	walk(roots)
-	return contexts
-}
-
-interface InferredCloneFlags {
-	options?: MergePresentationIntoCalculationOptions
-	originalCalcKeys: Set<string>
-}
-
 function descendantKeys(node: TreeNode): Set<string> {
 	const keys = new Set<string>()
 	const walk = (n: TreeNode) => {
@@ -1691,7 +1736,7 @@ function descendantKeys(node: TreeNode): Set<string> {
 }
 
 /**
- * After presentation rollup inference, drop flat siblings whose keys now
+ * After presentation rollup grafting, drop flat siblings whose keys now
  * appear under another sibling — re-parent in place instead of duplicating.
  */
 function dedupeReparentedSiblings(siblings: TreeNode[]): TreeNode[] {
@@ -1706,9 +1751,8 @@ function dedupeReparentedSiblings(siblings: TreeNode[]): TreeNode[] {
 
 /**
  * True when the parent's numeric value equals the signed weighted sum of its
- * direct children (calculation-linkbase math). Used to protect already-correct
- * calc groupings from presentation rollup inference that coincidentally nests
- * peer lines under each other (e.g. Receivables + Inventories ≈ OtherCurrentAssets).
+ * direct children. Used to skip presentation renesting when a parent already
+ * reconciles, and by cross-report calc parenting.
  */
 function childrenReconcileToParent(parent: TreeNode, children: TreeNode[]): boolean {
 	const target = numericValue(parent)
@@ -1720,99 +1764,6 @@ function childrenReconcileToParent(parent: TreeNode, children: TreeNode[]): bool
 		sum += (typeof child.weight === 'number' ? child.weight : 1) * value
 	}
 	return Math.abs(sum - target) <= 1
-}
-
-function cloneWithInferredPresentationChildren(
-	node: TreeNode,
-	contexts: Map<string, PresentationContext[]>,
-	stack: Set<string>,
-	inferFlags: InferredCloneFlags | undefined,
-	fromInferredPresentation: boolean,
-	/**
-	 * Calc-sibling keys under a parent whose children already reconcile.
-	 * Presentation rollup must not claim these — they are peer face lines, not
-	 * components of another sibling (coincident sums are common on cash flow).
-	 */
-	protectedCalcSiblingKeys?: Set<string>,
-): TreeNode {
-	const norm = stripNamespace(node.key)
-	const originalChildren = node.children ?? []
-	const siblingKeys = new Set(originalChildren.map((child) => stripNamespace(child.key)))
-	// Only protect when this calc parent already sums correctly. Null-valued
-	// containers (disclosure `…LineItems`) stay eligible for sibling reparenting
-	// (DebtCurrent claiming its components). Reconciling statement parents
-	// (IncreaseDecreaseInOperatingCapital) must keep their flat calc children.
-	const protectForChildren = childrenReconcileToParent(node, originalChildren)
-		? siblingKeys
-		: protectedCalcSiblingKeys
-
-	let children = originalChildren.map((child) =>
-		cloneWithInferredPresentationChildren(
-			child,
-			contexts,
-			stack,
-			inferFlags,
-			fromInferredPresentation,
-			protectForChildren,
-		),
-	)
-	children = dedupeReparentedSiblings(children)
-	const existingChildKeys = new Set(children.map((child) => stripNamespace(child.key)))
-	const childStack = new Set(stack)
-	childStack.add(norm)
-	const inferred = inferPresentationChildren(node, contexts, stack)
-		.filter((child) => !existingChildKeys.has(stripNamespace(child.key)))
-		.filter((child) => !protectedCalcSiblingKeys?.has(stripNamespace(child.key)))
-		.map((child) =>
-			cloneWithInferredPresentationChildren(
-				child,
-				contexts,
-				childStack,
-				inferFlags,
-				true,
-				protectForChildren,
-			),
-		)
-
-	let out: TreeNode = {
-		...node,
-		children: dedupeReparentedSiblings(children.concat(inferred)),
-	}
-	if (
-		inferFlags?.options?.markEnrichedFromPresentation &&
-		fromInferredPresentation &&
-		!inferFlags.originalCalcKeys.has(norm)
-	) {
-		out = { ...out, enrichedFromPresentation: true }
-	}
-	return out
-}
-
-function inferPresentationChildren(
-	node: TreeNode,
-	contexts: Map<string, PresentationContext[]>,
-	stack: Set<string>,
-): TreeNode[] {
-	const norm = stripNamespace(node.key)
-	if (stack.has(norm)) return []
-
-	const targetValue = numericValue(node)
-	// Zero is not a usable rollup target: many disclosure rows share a 0 fact
-	// (unused facilities, nil commercial-paper activity), and any pair of
-	// zeros "sums" to the target — nesting peer lines under each other.
-	if (targetValue === null || targetValue === 0) return []
-
-	for (const context of contexts.get(norm) ?? []) {
-		// Skip duplicate presentation rows — if a prior sibling has the same
-		// key, this is a summary/subtotal repeat whose preceding siblings are
-		// unrelated to this node's children.
-		const hasPriorDuplicate = context.siblings.slice(0, context.index).some((s) => stripNamespace(s.key) === norm)
-		if (hasPriorDuplicate) continue
-
-		const candidates = findRollupCandidateSiblings(context, targetValue)
-		if (candidates.length > 0) return candidates
-	}
-	return []
 }
 
 function signedPresentationLineContribution(node: TreeNode): number {
@@ -1839,46 +1790,6 @@ function withSignedPresentationWeight(node: TreeNode): TreeNode {
 	const signed = signedPresentationLineContribution(node)
 	const weight = Math.sign(signed) === Math.sign(raw) ? 1 : -1
 	return weight === (typeof node.weight === 'number' ? node.weight : 1) ? node : { ...node, weight }
-}
-
-function findRollupCandidateSiblings(context: PresentationContext, targetValue: number): TreeNode[] {
-	// Skip shares / EPS / ratio rows — their magnitudes are not comparable to
-	// monetary subtotals, and ratio values (0.x) fit inside the ±1 tolerance.
-	const priorNumericSiblings = context.siblings
-		.slice(0, context.index)
-		.filter((node) => numericValue(node) !== null && !isExcludedFromMonetaryRollup(node.unit))
-
-	// Pass 1: signed-label heuristic. Correct for income-statement subtotals
-	// where rows labelled "expense / cost / tax / loss / impairment / …" are
-	// deductions. Stamp ±1 weights so the resulting calc parent is coherent.
-	const signed = scanTrailingRollupSlices(priorNumericSiblings, targetValue, signedPresentationLineContribution)
-	if (signed.length > 0) return signed.map(withSignedPresentationWeight)
-
-	// Pass 2 (fallback): strict unsigned sum. Balance-sheet groupings (e.g.
-	// the current-assets block ending in `AssetsCurrent`) contain additive
-	// asset lines whose labels match the deduction regex; an unsigned rollup
-	// recovers these. Only runs when the signed pass found nothing.
-	return scanTrailingRollupSlices(priorNumericSiblings, targetValue, (node) => numericValue(node) ?? 0)
-}
-
-function scanTrailingRollupSlices(
-	priorNumericSiblings: TreeNode[],
-	targetValue: number,
-	contribution: (node: TreeNode) => number,
-): TreeNode[] {
-	for (let start = priorNumericSiblings.length - 1; start >= 0; start--) {
-		const slice = priorNumericSiblings.slice(start)
-		// A single prior sibling whose value equals the target is not a rollup —
-		// it is a coincident magnitude (e.g. commercial-paper proceeds and
-		// repayments both 500M on a cash-flow face). Requiring ≥2 components
-		// keeps genuine multi-line subtotals (AssetsCurrent, DebtCurrent, …)
-		// while refusing to nest peer face lines under each other.
-		if (slice.length < 2) continue
-		const sum = slice.reduce((total, node) => total + contribution(node), 0)
-		if (Math.abs(sum - targetValue) <= 1) return slice
-	}
-
-	return []
 }
 
 function presentationLeafPassesNonZeroFilter(node: TreeNode, requireNonZero: boolean): boolean {
