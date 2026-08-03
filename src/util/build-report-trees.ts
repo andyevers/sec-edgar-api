@@ -1355,6 +1355,15 @@ function renestPresentationHierarchy(node: TreeNode): TreeNode {
  * root (or intermediate) shares a key with a calc node, graft its presentation-
  * only children under that calc node instead of appending a duplicate shell.
  * Concepts already present in the original calculation linkbase are never moved.
+ *
+ * Abstract groupings (`…Abstract`) are never attached as children of a
+ * calculation-linkbase node. Presentation renesting can falsely nest an
+ * opex abstract under an unrelated face line (e.g. InvestmentIncomeInterest);
+ * grafting that abstract would corrupt the calc backbone and let SecGraph
+ * union the abstract's presentation children into the wrong down-pass scope.
+ * Instead, fold the abstract's presentation-only children onto its concrete
+ * calc twin when present (`OperatingExpensesAbstract` → `OperatingExpenses`),
+ * or keep the abstract as a top-level presentation-only root.
  */
 function graftPresentationOnlyOntoCalculation(
 	calcRoots: TreeNode[],
@@ -1363,16 +1372,39 @@ function graftPresentationOnlyOntoCalculation(
 	options?: MergePresentationIntoCalculationOptions,
 ): TreeNode[] {
 	const calcByKey = new Map<string, TreeNode>()
+	const calcByKeyLower = new Map<string, TreeNode>()
 	const index = (nodes: TreeNode[]) => {
 		for (const n of nodes) {
 			const norm = stripNamespace(n.key)
 			if (!calcByKey.has(norm)) calcByKey.set(norm, n)
+			const lower = norm.toLowerCase()
+			if (!calcByKeyLower.has(lower)) calcByKeyLower.set(lower, n)
 			if (n.children) index(n.children)
 		}
 	}
 	index(calcRoots)
 
 	const mark = options?.markEnrichedFromPresentation === true
+	const deferredAbstractRoots: TreeNode[] = []
+
+	const foldAbstractAwayFromCalcParent = (abstractNode: TreeNode): void => {
+		const absKids = abstractNode.children ?? []
+		if (absKids.length === 0) return // empty shell — drop
+		const twinNorm = stripNamespace(abstractNode.key).slice(0, -'Abstract'.length)
+		const twin = calcByKey.get(twinNorm) ?? calcByKeyLower.get(twinNorm.toLowerCase())
+		if (twin) {
+			const existing = new Set((twin.children ?? []).map((c) => stripNamespace(c.key)))
+			const toAdd = absKids.filter((k) => {
+				const kn = stripNamespace(k.key)
+				return !existing.has(kn) && !isAbstractKey(k)
+			})
+			if (toAdd.length > 0) {
+				twin.children = dedupeReparentedSiblings([...(twin.children ?? []), ...toAdd])
+			}
+			return
+		}
+		deferredAbstractRoots.push(abstractNode)
+	}
 
 	const absorb = (presNode: TreeNode): TreeNode | null => {
 		const absorbedKids = (presNode.children ?? [])
@@ -1384,9 +1416,17 @@ function graftPresentationOnlyOntoCalculation(
 			const calcNode = calcByKey.get(norm)
 			if (calcNode && absorbedKids.length > 0) {
 				const existing = new Set((calcNode.children ?? []).map((c) => stripNamespace(c.key)))
-				const toAdd = absorbedKids.filter((k) => !existing.has(stripNamespace(k.key)))
-				if (toAdd.length > 0) {
-					calcNode.children = dedupeReparentedSiblings([...(calcNode.children ?? []), ...toAdd])
+				const graftable: TreeNode[] = []
+				for (const k of absorbedKids) {
+					if (existing.has(stripNamespace(k.key))) continue
+					if (isAbstractKey(k)) {
+						foldAbstractAwayFromCalcParent(k)
+						continue
+					}
+					graftable.push(k)
+				}
+				if (graftable.length > 0) {
+					calcNode.children = dedupeReparentedSiblings([...(calcNode.children ?? []), ...graftable])
 				}
 			}
 			// Calc-native shell — never append a duplicate.
@@ -1404,7 +1444,7 @@ function graftPresentationOnlyOntoCalculation(
 	}
 
 	const remaining = presentationOnlyRoots.map(absorb).filter((n): n is TreeNode => n !== null)
-	return calcRoots.concat(remaining)
+	return calcRoots.concat(remaining, deferredAbstractRoots)
 }
 
 function flattenTreeNodes(tree: TreeNode[]): TreeNode[] {
@@ -1543,6 +1583,12 @@ type RollupRunMatch =
  * while stored magnitudes stay positive). Returns the run's start index and
  * match mode, scanning longest-trailing-run first so a subtotal claims
  * everything since the prior boundary. `null` when nothing reconciles.
+ *
+ * Null-valued siblings (typical `…Abstract` groupings) are never treated as
+ * zero contributors: doing so lets a nearby face line falsely claim them when
+ * the remaining numeric run is within relative tolerance
+ * (e.g. OperatingIncomeLoss 399M + OperatingExpensesAbstract null ≈
+ * InvestmentIncomeInterest 400M at 0.5%).
  */
 function findRollupRun(stack: TreeNode[], node: TreeNode): RollupRunMatch | null {
 	const target = numericValue(node)
@@ -1550,14 +1596,18 @@ function findRollupRun(stack: TreeNode[], node: TreeNode): RollupRunMatch | null
 	for (let start = 0; start <= stack.length - 1; start++) {
 		const run = stack.slice(start)
 		if (run.length < 2) continue
-		const sum = run.reduce((acc, n) => acc + (numericValue(n) ?? 0), 0)
+		const values = run.map(numericValue)
+		if (values.some((v) => v === null)) continue
+		const sum = (values as number[]).reduce((acc, n) => acc + n, 0)
 		if (reconciles(sum, target)) return { start, mode: 'additive' }
 	}
 	for (let start = 0; start <= stack.length - 2; start++) {
 		const run = stack.slice(start)
 		if (run.length < 2) continue
-		const last = numericValue(run[run.length - 1]!) ?? 0
-		const sum = run.slice(0, -1).reduce((acc, n) => acc + (numericValue(n) ?? 0), 0) - last
+		const values = run.map(numericValue)
+		if (values.some((v) => v === null)) continue
+		const last = values[values.length - 1]!
+		const sum = (values as number[]).slice(0, -1).reduce((acc, n) => acc + n, 0) - last
 		if (reconciles(sum, target)) return { start, mode: 'contraLast' }
 	}
 	// Pass 3: signed-label contributions (QCOM-style impairment / loss lines
@@ -1565,6 +1615,7 @@ function findRollupRun(stack: TreeNode[], node: TreeNode): RollupRunMatch | null
 	for (let start = 0; start <= stack.length - 1; start++) {
 		const run = stack.slice(start)
 		if (run.length < 2) continue
+		if (run.some((n) => numericValue(n) === null)) continue
 		const sum = run.reduce((acc, n) => acc + signedPresentationLineContribution(n), 0)
 		if (reconciles(sum, target)) return { start, mode: 'signed' }
 	}
@@ -1815,6 +1866,10 @@ function prunePresentationOnly(
 
 	if (existsInCalculation && children.length === 0) return null
 	if (children.length === 0) {
+		// Empty abstract shells (all concrete kids already live in calc) are not
+		// useful presentation-only rows — drop them so they cannot be grafted or
+		// appended under the calculation tree.
+		if (isAbstractKey(node) && numericValue(node) === null) return null
 		// Ratios (pure/number/percent) are presentation chrome on face statements
 		// — do not append them as calculation-tree roots. Keep shares / EPS.
 		if (isRatioUnit(node.unit)) return null
