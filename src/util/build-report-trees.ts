@@ -9,11 +9,19 @@ import {
 } from '../types'
 import { resolveConceptTreeValue } from './member-fact-rollup'
 import { extractKeysFromReportHtml } from './extract-report-html-keys'
+import { buildMemberDomains, MemberDomainAxis } from './member-domains'
 
 export interface XbrlFilingSummaryReportWithTrees extends XbrlFilingSummaryReport {
 	calculationTree: TreeNode[]
 	presentationTree: TreeNode[]
+	/**
+	 * Declared member nesting per axis, read off this report's presentation links. Display
+	 * order, not arithmetic — sum-validate before trusting an edge. @see buildMemberDomains
+	 */
+	memberDomains?: MemberDomainAxis[]
 }
+
+export type { DomainMemberNode, MemberDomainAxis } from './member-domains'
 
 export type MemberInclusionRule = 'always' | 'inReportsWherePresent' | 'never'
 export type RowLabelType = 'preferredLabel' | 'descriptiveLabel'
@@ -568,12 +576,19 @@ function buildSingleReportFromLinkbase(params: {
 		calculationTreeNodes.push(...hierarchyToTree(deepNestByKeys(hierarchyCalc)))
 	})
 
+	const memberDomains = buildMemberDomains({
+		presentationLinksReport: params.presentationLinksReport,
+		labelByKey,
+		hrefToKey,
+	})
+
 	return {
 		...params.report,
 		calculationTree: params.stitchCalcIslands
 			? stitchCalcIslandsByValueRollup(calculationTreeNodes, params.stitchCalcIslandsScopeOverlapToTargetTree)
 			: calculationTreeNodes,
 		presentationTree: presentationTreeNodes,
+		...(memberDomains.length > 0 ? { memberDomains } : {}),
 	}
 }
 
