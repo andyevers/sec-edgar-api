@@ -36,8 +36,29 @@ export function allMembersShareHomogeneousDimensions(members: RollupMemberFact[]
 }
 
 /**
+ * Axes that scope a row to a *reporting entity* rather than break it into
+ * components of that row's own total.
+ *
+ * A combined filing (Dominion Energy + Virginia Electric & Power in one 10-Q)
+ * carries both registrants' primary statements under a single role, separated
+ * only by a `dei:LegalEntityAxis` member; the consolidated registrant is the
+ * axis default, so its facts are undimensioned. Members along such an axis are
+ * therefore *other companies' statement lines*, never a breakdown of this line,
+ * and summing them attributes a subsidiary's number to the parent.
+ */
+const REGISTRANT_SCOPING_AXES = new Set(['dei:LegalEntityAxis'])
+
+/** True when any segment pins the row to a co-registrant rather than a component. */
+export function isRegistrantScoped(member: RollupMemberFact): boolean {
+	return member.segments?.some((s) => REGISTRANT_SCOPING_AXES.has(s.dimension)) ?? false
+}
+
+/**
  * Roll a node value up from its members when the members corroborate a single
  * total across one or more axes.
+ *
+ * Registrant-scoped members (see {@link isRegistrantScoped}) are excluded
+ * before grouping: they are a different company's number, not a component.
  *
  * Members are grouped by their {@link axisSignature} (ordered dimension list,
  * which also distinguishes 2-segment rows from 3-segment rows so a child
@@ -52,6 +73,14 @@ export function allMembersShareHomogeneousDimensions(members: RollupMemberFact[]
 export function sumMembersByAxisAgreement(members: RollupMemberFact[]): number | null {
 	if (members.length === 0) return null
 
+	const componentMembers = members.filter((m) => !isRegistrantScoped(m))
+	if (componentMembers.length === 0) return null
+
+	return sumByAxisAgreement(componentMembers)
+}
+
+/** The axis-group agreement core, with no registrant filtering. */
+function sumByAxisAgreement(members: RollupMemberFact[]): number | null {
 	const groups = new Map<string, RollupMemberFact[]>()
 	for (const m of members) {
 		const sig = axisSignature(m)
@@ -97,6 +126,21 @@ export function sumMemberNumericValues(members: RollupMemberFact[]): number | nu
 	return sum
 }
 
+/**
+ * Axis-agreement sum over only the registrant-scoped member rows — the
+ * fallback {@link sumMembersByAxisAgreement} refuses. Group agreement still
+ * applies, so a registrant slice and that registrant's own deeper breakdown
+ * (extra axes) must corroborate each other or the fallback stays null.
+ * Callers must flag the result as provisional and let the surrounding tree's
+ * arithmetic corroborate or reject it — see
+ * `suppressUncorroboratedRegistrantRollups` in build-report-trees.
+ */
+export function sumRegistrantScopedMembers(members: RollupMemberFact[]): number | null {
+	const scoped = members.filter((m) => isRegistrantScoped(m))
+	if (scoped.length === 0) return null
+	return sumByAxisAgreement(scoped)
+}
+
 export function primaryFactHasFiniteNumericValue(primary: { value: number | string } | null): boolean {
 	if (primary == null) return false
 	const v = primary.value
@@ -133,4 +177,62 @@ export function resolveConceptTreeValue(params: {
 
 	if (primary == null) return null
 	return primary.value ?? null
+}
+
+export interface ConceptTreeValueResolution {
+	value: number | string | null
+	/**
+	 * True when the value exists only because registrant-scoped members
+	 * supplied it ({@link sumRegistrantScopedMembers}) — a co-registrant's
+	 * number standing in for a row the reporting entity never tagged.
+	 * Provisional: the consumer must corroborate it against the surrounding
+	 * calculation roll-up or drop it.
+	 */
+	registrantScopedRollup: boolean
+}
+
+/**
+ * {@link resolveConceptTreeValue} plus provenance: when the strict rollup
+ * yields nothing, fall back to the registrant-scoped member sum but say so,
+ * so tree building can subject that value to the report's own arithmetic
+ * instead of trusting or discarding it blindly.
+ */
+export function resolveConceptTreeValueWithProvenance(params: {
+	primary: { value: number | string } | null
+	members: RollupMemberFact[]
+	/**
+	 * Every dimensional fact for the concept in the period, unfiltered by the
+	 * report's allowed members. Some combined filers give each registrant its
+	 * own R-file, so the consolidated report's presentation never admits the
+	 * co-registrant member — yet the row's only tagging lives there (PCG's
+	 * preferred dividends, CMS's ordinary dividends). The fallback value taken
+	 * from here is always flagged for corroboration.
+	 */
+	allMembers?: RollupMemberFact[]
+	rollupParentValueFromSingleAxisMembers: boolean
+}): ConceptTreeValueResolution {
+	const { primary, members, allMembers, rollupParentValueFromSingleAxisMembers } = params
+
+	if (primaryFactHasFiniteNumericValue(primary)) {
+		return { value: primary!.value, registrantScopedRollup: false }
+	}
+
+	if (rollupParentValueFromSingleAxisMembers) {
+		if (members.length > 0) {
+			const sum = sumMembersByAxisAgreement(members)
+			if (sum !== null) return { value: sum, registrantScopedRollup: false }
+			const registrantSum = sumRegistrantScopedMembers(members)
+			if (registrantSum !== null) return { value: registrantSum, registrantScopedRollup: true }
+		} else if (allMembers && allMembers.length > 0) {
+			// No member reached this report's tree: fall back to the concept's
+			// global dimensional facts, but only ever as a flagged value —
+			// exactly what the pre-provenance synthetic facts supplied, now
+			// subject to the calculation-roll-up gate instead of trusted.
+			const globalSum = sumByAxisAgreement(allMembers)
+			if (globalSum !== null) return { value: globalSum, registrantScopedRollup: true }
+		}
+	}
+
+	if (primary == null) return { value: null, registrantScopedRollup: false }
+	return { value: primary.value ?? null, registrantScopedRollup: false }
 }

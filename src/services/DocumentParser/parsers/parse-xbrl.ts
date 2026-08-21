@@ -7,7 +7,7 @@ import type {
 	XbrlContext,
 } from '../../../types'
 import { KEY_SPLIT } from '../../../util/constants'
-import { RollupMemberFact, sumMembersByAxisAgreement } from '../../../util/member-fact-rollup'
+import { isRegistrantScoped, RollupMemberFact, sumMembersByAxisAgreement } from '../../../util/member-fact-rollup'
 import { getLabelByTaxonomy } from '../../../util/util-xbrl'
 import FactFiscalCalculator from '../../ReportRawBuilder/FactFiscalCalculator'
 import FactPeriodResolver from '../../ReportRawBuilder/FactPeriodResolver'
@@ -253,7 +253,17 @@ function buildReportsFromFacts(params: {
 
 				// Synthesize a primary fact from a representative member so the
 				// rolled value is also available in the `facts` array.
-				const template = memberFacts[0]!
+				//
+				// The representative must be one of the members that actually
+				// contributed to `rolledValue`. Registrant-scoped members are
+				// excluded from the sum, so taking `memberFacts[0]` blindly could
+				// stamp the synthetic fact with a co-registrant's contextRef —
+				// making a Virginia Power context look like Dominion's
+				// consolidated one to anything that reads `contextRef`.
+				const template = memberFacts.find(
+					(m) => !isRegistrantScoped({ segments: m.segments ?? [], value: m.value }),
+				)
+				if (!template) continue
 				const syntheticFact: FactItemExtended = {
 					...template,
 					value: rolledValue,

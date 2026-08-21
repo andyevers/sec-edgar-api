@@ -7,7 +7,7 @@ import {
 	XbrlLinkbaseItemExtended,
 	XbrlLinkbaseItemLocator,
 } from '../types'
-import { resolveConceptTreeValue } from './member-fact-rollup'
+import { resolveConceptTreeValueWithProvenance } from './member-fact-rollup'
 import { extractKeysFromReportHtml } from './extract-report-html-keys'
 import { buildMemberDomains, MemberDomainAxis } from './member-domains'
 
@@ -36,6 +36,15 @@ export interface TreeNode {
 	weight: number
 	members?: MemberFact[]
 	children?: TreeNode[]
+	/**
+	 * When set, this row's value came only from registrant-scoped members
+	 * (`dei:LegalEntityAxis`) — a co-registrant's number on a row the
+	 * reporting entity never tagged. Only values corroborated by the report's
+	 * own calculation roll-up (a genuine parent that reconciles only WITH the
+	 * row) survive to the returned trees; the rest are nulled by
+	 * {@link suppressUncorroboratedRegistrantRollups}.
+	 */
+	registrantScopedRollup?: boolean
 	/**
 	 * When set, this row was restructured into the calculation tree from the
 	 * presentation linkbase by
@@ -192,6 +201,12 @@ function buildTemplateHierarchyFlat(params: {
 			const periodFactsFrom = getPeriodFacts({ conceptKey: keyFrom, factsByConcept, isPeriodStart: false })
 			const membersFrom = extractMemberFacts(periodFactsFrom, memberInclusionRule, allowedMembers)
 			const primaryFactFrom = extractPrimaryFact(periodFactsFrom)
+			const resolutionFrom = resolveConceptTreeValueWithProvenance({
+				primary: primaryFactFrom,
+				members: membersFrom,
+				allMembers: extractMemberFacts(periodFactsFrom, 'always'),
+				rollupParentValueFromSingleAxisMembers,
+			})
 
 			itemsById.set(arc.from, {
 				id: arc.from,
@@ -207,11 +222,8 @@ function buildTemplateHierarchyFlat(params: {
 					}) ?? keyFrom,
 				isPeriodStart: false,
 				period: primaryFactFrom?.period || 0,
-				value: resolveConceptTreeValue({
-					primary: primaryFactFrom,
-					members: membersFrom,
-					rollupParentValueFromSingleAxisMembers,
-				}),
+				value: resolutionFrom.value,
+				...(resolutionFrom.registrantScopedRollup ? { registrantScopedRollup: true } : {}),
 				unit: primaryFactFrom?.unit ?? '',
 				members: membersFrom,
 				children: [],
@@ -221,6 +233,12 @@ function buildTemplateHierarchyFlat(params: {
 		const periodFactsTo = getPeriodFacts({ conceptKey: keyTo, factsByConcept, isPeriodStart })
 		const membersTo = extractMemberFacts(periodFactsTo, memberInclusionRule, allowedMembers)
 		const primaryFactTo = extractPrimaryFact(periodFactsTo)
+		const resolutionTo = resolveConceptTreeValueWithProvenance({
+			primary: primaryFactTo,
+			members: membersTo,
+			allMembers: extractMemberFacts(periodFactsTo, 'always'),
+			rollupParentValueFromSingleAxisMembers,
+		})
 
 		const hierarchyTo: HierarchyItem = {
 			id: arc.to,
@@ -237,11 +255,8 @@ function buildTemplateHierarchyFlat(params: {
 				}) ?? keyTo,
 			isPeriodStart,
 			period: primaryFactTo?.period || 0,
-			value: resolveConceptTreeValue({
-				primary: primaryFactTo,
-				members: membersTo,
-				rollupParentValueFromSingleAxisMembers,
-			}),
+			value: resolutionTo.value,
+			...(resolutionTo.registrantScopedRollup ? { registrantScopedRollup: true } : {}),
 			unit: primaryFactTo?.unit ?? '',
 			members: membersTo,
 			children: [],
@@ -497,6 +512,83 @@ function seedCalcFromPresentationWhenEmpty(report: XbrlFilingSummaryReportWithTr
 	return { ...report, calculationTree: deepCloneNodes(report.presentationTree) }
 }
 
+/**
+ * Reconciliation tolerance for corroborating a registrant-scoped rollup.
+ * Facts are raw currency units, but combined filers round per row (SWX's
+ * other-income note ties to its stated total within 0.06%), so corroboration
+ * accepts sub-0.1% agreement. The leaks this pass exists to stop disagree at
+ * double-digit percentages (D's investing section was off by 84% with the
+ * co-registrant rows in), so the two regimes never meet.
+ */
+function registrantRollupTolerance(parentValue: number): number {
+	return Math.max(2, Math.abs(parentValue) * 1e-3)
+}
+
+/**
+ * Null registrant-scoped rollup values unless the report's own arithmetic
+ * demands them.
+ *
+ * A combined filing (Dominion + Virginia Electric & Power in one 10-Q) unions
+ * both registrants' rows under one role, so a row valued from a co-registrant
+ * member may or may not belong to the reporting entity. The only verdict we
+ * trust is the filer's own roll-up: for a parent whose value is genuine, if
+ * the children reconcile only WITH the flagged row, the filer tagged a real
+ * line once with the entity axis — keep it (SWX's other-income detail, whose
+ * note total needs the entity-scoped interest row). Everything else — parent
+ * reconciles without it (D's VEPCO capex), no genuine parent to ask, or
+ * arithmetic that cannot decide — is nulled. Defaulting undecidable rows to
+ * keep, even on note reports, was measured to re-open old leaks: kept note
+ * values get spliced into statements by breakdown supplements downstream.
+ *
+ * The presentation tree mirrors the calculation tree's verdicts by key so
+ * presentation merge cannot reintroduce a value calc arithmetic rejected.
+ */
+function suppressUncorroboratedRegistrantRollups(params: {
+	calculationTreeNodes: TreeNode[]
+	presentationTreeNodes: TreeNode[]
+}): void {
+	const { calculationTreeNodes, presentationTreeNodes } = params
+	const keptKeys = new Set<string>()
+
+	const isNumeric = (n: TreeNode) => typeof n.value === 'number' && Number.isFinite(n.value)
+
+	const nullFlagged = (node: TreeNode): void => {
+		if (node.registrantScopedRollup && node.value !== null && !keptKeys.has(node.key)) {
+			node.value = null
+		}
+		for (const c of node.children ?? []) nullFlagged(c)
+	}
+	const keepFlagged = (node: TreeNode): void => {
+		if (node.registrantScopedRollup) keptKeys.add(node.key)
+		for (const c of node.children ?? []) keepFlagged(c)
+	}
+
+	// First pass: collect corroborated keeps — flagged children a genuine
+	// parent's roll-up cannot do without.
+	const visit = (node: TreeNode): void => {
+		const kids = node.children ?? []
+		const flaggedKids = kids.filter((c) => c.registrantScopedRollup && isNumeric(c))
+		if (flaggedKids.length > 0 && !node.registrantScopedRollup && isNumeric(node)) {
+			const numericKids = kids.filter(isNumeric)
+			const sum = (list: TreeNode[]) => list.reduce((t, c) => t + (c.weight || 1) * (c.value as number), 0)
+			const withAll = sum(numericKids)
+			const withoutFlagged = withAll - sum(flaggedKids)
+			const tol = registrantRollupTolerance(node.value as number)
+			const reconciles = Math.abs(withAll - (node.value as number)) <= tol
+			const reconcilesWithout = Math.abs(withoutFlagged - (node.value as number)) <= tol
+			if (reconciles && !reconcilesWithout) flaggedKids.forEach(keepFlagged)
+		}
+		for (const c of kids) visit(c)
+	}
+	calculationTreeNodes.forEach(visit)
+
+	// Second pass: every uncorroborated flagged value is nulled, in both trees
+	// (per key, so the same row keeps a single verdict everywhere and
+	// presentation merge cannot reintroduce a rejected value).
+	calculationTreeNodes.forEach(nullFlagged)
+	presentationTreeNodes.forEach(nullFlagged)
+}
+
 function buildSingleReportFromLinkbase(params: {
 	report: XbrlFilingSummaryReport
 	calculationLinksReport: XbrlLinkbaseItemExtended[]
@@ -580,6 +672,13 @@ function buildSingleReportFromLinkbase(params: {
 		presentationLinksReport: params.presentationLinksReport,
 		labelByKey,
 		hrefToKey,
+	})
+
+	// Corroborate-or-null registrant-scoped rollups before stitching, so calc
+	// islands are never stitched over a co-registrant's number.
+	suppressUncorroboratedRegistrantRollups({
+		calculationTreeNodes,
+		presentationTreeNodes,
 	})
 
 	return {

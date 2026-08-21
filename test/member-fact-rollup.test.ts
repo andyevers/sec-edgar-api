@@ -1,8 +1,12 @@
 import {
 	allMembersShareHomogeneousDimensions,
 	allMembersShareSingleAxis,
+	isRegistrantScoped,
 	resolveConceptTreeValue,
+	resolveConceptTreeValueWithProvenance,
 	sumMemberNumericValues,
+	sumMembersByAxisAgreement,
+	sumRegistrantScopedMembers,
 } from '../src/util/member-fact-rollup'
 
 describe('member-fact-rollup', () => {
@@ -235,5 +239,127 @@ describe('member-fact-rollup', () => {
 				rollupParentValueFromSingleAxisMembers: true,
 			}),
 		).toBe(null)
+	})
+
+	describe('registrant-scoped members', () => {
+		const LEA = 'dei:LegalEntityAxis'
+		const vepco = {
+			segments: [{ dimension: LEA, value: 'd:VirginiaElectricAndPowerCompanyMember', label: '' }],
+			value: 2669000000,
+		}
+
+		test('isRegistrantScoped flags dei:LegalEntityAxis rows only', () => {
+			expect(isRegistrantScoped(vepco)).toBe(true)
+			expect(
+				isRegistrantScoped({
+					segments: [{ dimension: 'us-gaap:StatementBusinessSegmentsAxis', value: 'f:Auto', label: '' }],
+					value: 1,
+				}),
+			).toBe(false)
+			expect(isRegistrantScoped({ segments: [], value: 1 })).toBe(false)
+		})
+
+		test('a co-registrant member never becomes the parent row value', () => {
+			// D 2025 Q1: us-gaap:PaymentsToAcquirePropertyPlantAndEquipment is tagged
+			// only for Virginia Power. Rolling it up put VEPCO's 2.669B on Dominion's
+			// consolidated capex line, which Yahoo reports as 3.213B.
+			expect(sumMembersByAxisAgreement([vepco])).toBeNull()
+			expect(
+				resolveConceptTreeValue({
+					primary: null,
+					members: [vepco],
+					rollupParentValueFromSingleAxisMembers: true,
+				}),
+			).toBeNull()
+		})
+
+		test('registrant scoping does not disable ordinary breakdown rollups', () => {
+			const segment = (value: string, n: number) => ({
+				segments: [{ dimension: 'us-gaap:StatementBusinessSegmentsAxis', value, label: '' }],
+				value: n,
+			})
+			expect(sumMembersByAxisAgreement([segment('f:Auto', 40), segment('f:Credit', 60)])).toBe(100)
+		})
+
+		test('a mixed group sums only the component members', () => {
+			const segment = {
+				segments: [{ dimension: 'us-gaap:StatementBusinessSegmentsAxis', value: 'f:Auto', label: '' }],
+				value: 40,
+			}
+			expect(sumMembersByAxisAgreement([vepco, segment])).toBe(40)
+		})
+	})
+
+	describe('registrant-scoped fallback with provenance', () => {
+		const LEA = 'dei:LegalEntityAxis'
+		const vepco = {
+			segments: [{ dimension: LEA, value: 'd:VirginiaElectricAndPowerCompanyMember', label: '' }],
+			value: 2669000000,
+		}
+		const vepcoRelatedParty = {
+			segments: [
+				{ dimension: 'us-gaap:RelatedPartyTransactionAxis', value: 'd:ServicesProvidedByAffiliatesMember', label: '' },
+				{ dimension: LEA, value: 'd:VirginiaElectricAndPowerCompanyMember', label: '' },
+			],
+			value: 75000000,
+		}
+
+		test('sumRegistrantScopedMembers sums a lone registrant slice', () => {
+			expect(sumRegistrantScopedMembers([vepco])).toBe(2669000000)
+		})
+
+		test('sumRegistrantScopedMembers keeps axis-group agreement (disagreeing breakdown vetoes)', () => {
+			// D's related-party parenthetical: the registrant slice and the
+			// registrant's own deeper breakdown disagree — no fallback value,
+			// matching the strict rollup's own veto semantics.
+			expect(sumRegistrantScopedMembers([vepco, vepcoRelatedParty])).toBeNull()
+		})
+
+		test('provenance resolver flags the registrant fallback, not the strict rollup', () => {
+			const segment = (value: string, n: number) => ({
+				segments: [{ dimension: 'us-gaap:StatementBusinessSegmentsAxis', value, label: '' }],
+				value: n,
+			})
+			const strict = resolveConceptTreeValueWithProvenance({
+				primary: null,
+				members: [segment('f:Auto', 40), segment('f:Credit', 60)],
+				rollupParentValueFromSingleAxisMembers: true,
+			})
+			expect(strict).toEqual({ value: 100, registrantScopedRollup: false })
+
+			const scoped = resolveConceptTreeValueWithProvenance({
+				primary: null,
+				members: [vepco],
+				rollupParentValueFromSingleAxisMembers: true,
+			})
+			expect(scoped).toEqual({ value: 2669000000, registrantScopedRollup: true })
+		})
+
+		test('global fallback fires only when the report admitted no members', () => {
+			// PCG shape: the consolidated report's presentation never admits the
+			// Utility member, so members is empty — the concept's global facts
+			// supply the value, flagged for corroboration.
+			const utility = {
+				segments: [{ dimension: LEA, value: 'pcg:PacificGasAndElectricCompanyMember', label: '' }],
+				value: 3000000,
+			}
+			expect(
+				resolveConceptTreeValueWithProvenance({
+					primary: null,
+					members: [],
+					allMembers: [utility],
+					rollupParentValueFromSingleAxisMembers: true,
+				}),
+			).toEqual({ value: 3000000, registrantScopedRollup: true })
+			// A genuine primary always wins, unflagged.
+			expect(
+				resolveConceptTreeValueWithProvenance({
+					primary: { value: 5 },
+					members: [],
+					allMembers: [utility],
+					rollupParentValueFromSingleAxisMembers: true,
+				}),
+			).toEqual({ value: 5, registrantScopedRollup: false })
+		})
 	})
 })
